@@ -1,3 +1,249 @@
+## Iteratie 17 — 2026-07-03 (Fase 2 Research: droid)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `droid` (Factory
+  AI's terminal coding agent, binary `droid`). Section
+  appended to `.docs/research/opencode-env-audit.md`.
+- **Verdict: clean Bifrost route #6** (cleanest yet
+  found): `~/.factory/settings.json` `customModels[]`
+  is the BYOK Bifrost-seam — explicit JSON with
+  `baseUrl`, `apiKey`, `provider`, `model` fields, three
+  documented `provider` types
+  (`anthropic` | `openai` |
+  `generic-chat-completion-api`), and **10+ first-party
+  per-provider docs pages** that all use the same shape.
+- Adapter is **fully pass-through** (single env-touch in
+  the entire package). Adapter unchanged.
+
+**Source citations (all direct-fetched 2026-07-03)**
+
+- `backend/internal/adapters/agent/droid/droid.go:1-18`
+  — verbatim package self-description: "Package
+  droid implements the Droid (Factory) agent adapter:
+  launching new interactive sessions, resuming
+  hook-tracked sessions, installing workspace-local
+  hooks, and reading hook-derived session info. Droid
+  is Factory's terminal coding agent (binary
+  'droid'). Unlike Grok it has no Claude Code
+  compatibility layer, so AO installs its own hooks
+  into the worktree-local `.factory/hooks.json`
+  (see `hooks.go`). The hook JSON structure matches
+  Claude Code's, but Droid's `Notification` payload
+  omits `notification_type` and its hooks live under
+  `.factory/`, so the adapter ships its own activity
+  deriver (see `activity.go`) rather than reusing
+  Claude's. Launch uses the interactive
+  `droid [prompt]` command (the prompt is a positional
+  argument). Droid's interactive TUI exposes no
+  per-launch permission flag (`--auto` /
+  `--skip-permissions-unsafe` live only on
+  `droid exec`), so AO's graduated permission modes
+  are delivered by writing a process-scoped runtime
+  settings file (`sessionDefaultSettings.autonomyLevel`)
+  and passing it via the root `--settings <path>`
+  flag. Restore prefers the hook-captured native
+  session id via `-r <id>`."
+- `droid.go:90-115` — launch argv
+  `droid [--settings <path>] [--append-system-prompt[-file] <x>] [prompt]`.
+- `droid.go:135-156` — restore argv
+  `droid [--settings <path>] -r <agentSessionId>`.
+- `droid.go:179-194` — permission mapping:
+  Default→empty, AcceptEdits→`low`, Auto→`medium`,
+  BypassPermissions→`high`, written to a
+  process-scoped JSON settings file at
+  `os.TempDir()/ao-droid-<session-id>-settings.json`
+  keyed by sanitised session id, so the file never
+  lands in a commit.
+- `droid.go:271` — sole env-touch: `os.Getenv("APPDATA")`
+  for Windows binary resolution. Recursive grep
+  `grep "APPDATA\|os.Getenv\|os.LookupEnv"
+  backend/internal/adapters/agent/droid/` → only
+  line 271 matches.
+- `hooks.go:17-28` — constants: `droidSettingsDirName
+  = ".factory"`, `droidHooksFileName = "hooks.json"`,
+  `droidHookCommandPrefix = "ao hooks droid "`,
+  `droidHookTimeout = 30`. Hook events: SessionStart
+  (under `startup` matcher), UserPromptSubmit, Stop,
+  Notification, SessionEnd — each command triggers
+  `ao hooks droid <event>`.
+- `https://docs.factory.ai/cli` (direct-fetched) —
+  top-level CLI index. Lists install steps + sections;
+  **does not name any env vars related to provider
+  routing**.
+- `https://docs.factory.ai/cli/configuration/settings.md`
+  (direct-fetched) — settings-file paths:
+  `~/.factory/settings.json` (macOS/Linux),
+  `%USERPROFILE%\.factory\settings.json` (Windows);
+  `<project>/.factory/settings.local.json` for
+  project-scope; `specSaveDir` (default
+  `~/.factory/specs`); `worktreeDirectory` (default
+  `~/.factory/worktrees`). **No env-var schema.**
+  Legacy was `.droid.yaml`; current is `.factory/`
+  files. `/settings` is the interactive config
+  command.
+- `https://docs.factory.ai/reference/cli-reference`
+  (direct-fetched) — only env var documented:
+  `FACTORY_API_KEY` (auth-only, with example
+  `export FACTORY_API_KEY=fk-...`; GitHub Actions
+  uses `${{ secrets.FACTORY_API_KEY }}`). 28 main
+  flags + 5 subcommand tables. **No `--base-url`,
+  `--baseUrl`, `--api-base`, `--apiBase`,
+  `--custom-base-url`, `--model-url`,
+  `--proxy-url`, `--target-url` flag**. Closest
+  URL-adjacent flag: `--header KEY: VALUE` (MCP
+  servers only).
+- `https://docs.factory.ai/cli/byok/overview.md`
+  (direct-fetched) — **the critical finding.** BYOK
+  schema: `"apiKey supports environment variable
+  references using ${VAR_NAME} syntax"`. Three
+  documented `provider` identifiers: `anthropic`
+  (Anthropic Messages API), `openai` (OpenAI
+  Responses API), `generic-chat-completion-api`
+  (OpenAI Chat Completions API — OpenRouter,
+  Fireworks, Together AI, Ollama, vLLM, etc.).
+  CLI commands: `/model` (switch between configured
+  custom models), `/cost` (view cost breakdowns).
+- `https://docs.factory.ai/cli/byok/openai-anthropic.md`
+  (direct-fetched) — verbatim JSON:
+  ```json
+  {
+    "customModels": [
+      {
+        "model": "claude-sonnet-4-5-20250929",
+        "displayName": "Sonnet 4.5 [Custom]",
+        "baseUrl": "https://api.anthropic.com",
+        "apiKey": "YOUR_ANTHROPIC_KEY",
+        "provider": "anthropic",
+        "maxOutputTokens": 8192
+      },
+      {
+        "model": "gpt-5-codex",
+        "displayName": "GPT5-Codex [Custom]",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "YOUR_OPENAI_KEY",
+        "provider": "openai",
+        "maxOutputTokens": 16384
+      }
+    ]
+  }
+  ```
+- `https://docs.factory.ai/cli/byok/ollama.md`
+  (direct-fetched) — verbatim values:
+  `baseUrl: "http://localhost:11434/v1"`,
+  `provider: "generic-chat-completion-api"`. Adjacent
+  env var `OLLAMA_CONTEXT_LENGTH=32000` is documented
+  on the page (Ollama-side, not a Droid/Factory
+  Config key).
+- `https://docs.factory.ai/cli/byok/google-gemini.md`
+  (direct-fetched) —
+  `baseUrl: "https://generativelanguage.googleapis.com/v1beta/"`;
+  models `gemini-2.5-pro`,
+  `gemini-1.5-pro`, `gemini-1.5-flash`.
+- `https://docs.factory.ai/cli/byok/huggingface.md`
+  (direct-fetched) —
+  `baseUrl: "https://router.huggingface.co/v1"`;
+  example model
+  `meta-llama/Llama-4-Scout-17B-16E-Instruct:fireworks-ai`.
+- `https://docs.factory.ai/cli/byok/openrouter.md`
+  (direct-fetched) —
+  `baseUrl: "https://openrouter.ai/api/v1"`;
+  example model `openai/gpt-oss-20b`.
+- Sibling docs pages in
+  `https://docs.factory.ai/cli/byok/`: `baseten`,
+  `deepinfra`, `fireworks`, `groq`, `lm-studio` — all
+  use the same `customModels[]` shape (10+ providers
+  total in the directory). `lm-studio` is documented
+  with a local URL like the Ollama example.
+
+**Verdict — clean Bifrost route #6**
+
+| Bifrost criterion | Droid |
+|-------------------|-------|
+| Env-var base-URL    | ❌ `FACTORY_API_KEY` only (none) |
+| Config-file base-URL | ✅ `~/.factory/settings.json` `customModels[].baseUrl` |
+| Provider types supported | ✅ `anthropic` / `openai` / `generic-chat-completion-api` |
+| Bifrost-injectable JSON | ✅ pure-JSON, no env-var gymnastics |
+| Adapter env-touches | ✅ fully pass-through (one APPDATA read for Windows binpath) |
+| Adapter-side changes needed | ❌ none — piggyback on existing `--settings <path>` flag |
+
+The cleanest of all six routes so far (vs. cline,
+continueagent, crush, kilocode, autohand) because:
+
+1. **Explicit JSON schema** — no env-var indirection,
+   no shell expansion, no `custom:` prefix parser.
+2. **Three documented provider types** — Bifrost only
+   needs three model-emit strategies.
+3. **User-overridable `baseUrl`** — the loaded
+   `~/.factory/settings.json` can be **appended** at
+   `customModels` slot to point each provider at
+   `http://127.0.0.1:<bifrost-port>/v1`.
+4. **`apiKey: ${VAR_NAME}` substitution** — so the
+   AO gateway can keep credentials in env vars and
+   reference them by `${BIFROST_PROVIDER_TOKEN}` etc.
+5. **Process-scoped settings file pattern already
+   implemented** by the adapter at
+   `os.TempDir()/ao-droid-<sanitized-id>-settings.json`
+   for permission delivery — Bifrost can write
+   alongside the same per-session file with the
+   `customModels` and other router-shaped fields,
+   and the adapter's existing
+   `--settings <path>` flag will pick it up.
+
+**Adapter changes needed**
+
+**None.** Two implementation notes for the Bifrost
+side:
+
+1. Prefer **per-session** settings files at the same
+   `os.TempDir()/ao-droid-<sanitized-id>-bifrost.json`
+   path (mirror the permission-delivery file pattern);
+   pass via `--settings <bifrost-path>` before the
+   permission-delivery file (or merge the two into
+   one JSON before writing — `sessionDefaultSettings`
+   is top-level, `customModels` is top-level, no
+   overlap).
+2. **Hook installer (`hooks.go`) is worktree-scope**.
+   The `customModels[]` block is **user-scope** (read
+   from `~/.factory/settings.json`), so a Bifrost
+   write to the `customModels` block in the user
+   file is visible to Droid regardless of which
+   worktree is active. **No per-session emission
+   required** if the user file write is acceptable;
+   per-session emission is the option for multi-tenant
+   isolation.
+
+**Open questions surfaced**
+
+- **CLI `--settings <file>` accepts both project-level
+  and user-level files**: AO's adapter already
+  consumes the file via `--settings <path>` argv. The
+  path AO writes is process-scoped at `os.TempDir()`.
+  For Bifrost, **two policy choices** are reasonable:
+  (a) write at `$HOME/.factory/settings.json` (user
+  scope, no per-session isolation), or (b) write at
+  session-scoped `os.TempDir()` file (per-session
+  isolation, requires `--settings <path>` to come
+  *after* any project-level `.factory/settings.json`
+  so per-session overrides win). Both are valid;
+  Phase 3 will need the user to pick.
+- **`FACTORY_API_KEY` is not Bifrost-routable** —
+  it's auth for the Factory API path (telemetry,
+  cost reporting); it is separate from provider
+  model traffic. Leave it unset unless Factory
+  cloud-side features are needed.
+- **Per-provider `maxOutputTokens`** is part of the
+  schema; Bifrost should ignore it (pass through).
+
+**Voorgestelde volgende iteratie**
+
+Iteratie 18: `goose` (Block's open-source agent with a
+published BYOK JSON config path; clean Bifrost route
+candidate). Confirmed at queue head
+(`.docs/TODO.md` Phase 2 Research #1).
+
+---
+
 # CHANGELOG — autonomous fork loop
 
 This file records what each autonomous loop iteration landed on
