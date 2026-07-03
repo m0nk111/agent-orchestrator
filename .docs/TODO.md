@@ -26,7 +26,7 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [x] Confirm `AO_DATA_DIR` / `AO_RUN_FILE` still win when explicitly set, over `AO_HOME` — same commit; `TestLoadAOHome/AO_RUN_FILE_keeps_winning_over_AO_HOME` PASS, `..._AO_DATA_DIR_keeps_winning_over_AO_HOME` PASS.
 - [x] `backend/internal/adapters/runtime/conpty/ptyregistry/registry.go`: stop duplicating home-dir resolution in `registryFile()`; respect `AO_HOME` — feat(ptyregistry) 137c3052; gate `go test -race ./...` PASS (all packages green).
 - [ ] Decide: does AO create `AO_HOME` if it doesn't exist yet, or error? (mirror existing `MkdirAll` behavior used elsewhere, e.g. `runfile.Write`) — BLOCKED: explicit user decision needed in DECISIONS.md; cannot proceed until that's settled (RFC 001 silent).
-- [ ] Windows path handling: verify `AO_HOME` with drive letters / backslashes resolves correctly in `filepath.Join` calls
+- [x] Windows path handling: verify `AO_HOME` with drive letters / backslashes resolves correctly in `filepath.Join` calls — eeb8e793; `TestLoadAOHome/Windows-style_AO_HOME...` PASS and `TestLoadAOHome/mixed-slash_AO_HOME...` PASS. `defaultStateDir()` returns the `AO_HOME` value verbatim (so backslashes survive); only the appended `running.json` / `data` segment is joined with the host separator, which Go's `filepath.Join` does correctly on both linux and windows.
 
 ### Frontend (Electron)
 - [x] `frontend/src/main.ts`: `app.setPath("userData", …)` reads `AO_HOME` before falling back to `os.homedir()` — feat(electron) 1885ddf8 (`resolveUserDataParent` helper used at the call site).
