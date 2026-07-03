@@ -18,7 +18,8 @@ endpoint without per-adapter code branching.
 - [x] `codex` — done further down.
 - [x] `aider` — done further down still.
 - [x] `cline` — done in this file's "cline" section.
-- [ ] `amp`, `auggie`, `autohand`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
+- [x] `copilot` — done in this file's "copilot" section.
+- [ ] `amp`, `auggie`, `autohand`, `continueagent`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
 
 ## `opencode` (sst/opencode)
 
@@ -481,5 +482,103 @@ flag.
   project uses one of these AO has no gateway knob. That's a
   deliberate trade-off — flagging so it's not a surprise in
   Phase 2 doctor output.
+
+---
+
+## `copilot` (GitHub Copilot CLI, npm `@github/copilot`)
+
+Source: `backend/internal/adapters/agent/copilot/copilot.go`.
+Grep for `os.Setenv|os.Getenv|Getenv\(` returned **one match**:
+`os.Getenv("APPDATA")` at line 175 (Windows-only shell-tool
+path resolution). The AO `copilot` adapter spawns the npm-shipped
+`@github/copilot` CLI binary and lets it inherit the session
+env unchanged.
+
+> **Note on naming**: this adapter wraps the **new** `copilot`
+> CLI published by GitHub as `@github/copilot` (npm installable
+> under the executable name `copilot`), NOT the older `gh copilot`
+> extension of the GitHub CLI. The adapter is explicit about this
+> at `copilot.go:6`: "NOT the older `gh copilot`".
+
+What GitHub Copilot CLI itself reads, per the official GitHub
+docs + GitHub's `copilot-cli` repo (verified 2026-07-02):
+
+| Variable          | Purpose                                                  |
+|-------------------|----------------------------------------------------------|
+| `GH_TOKEN`        | GitHub auth token (env-driven; `GITHUB_TOKEN` is the alternate). Auth is otherwise interactive via `/login` OAuth flow. |
+| `GITHUB_TOKEN`    | Same auth role; `GH_TOKEN` wins per the README.          |
+| No other documented env vars | GitHub does not publish an env-var reference page for this CLI (`docs.github.com/en/copilot/reference/copilot-cli-reference/cli-environment-variables` returns 404). Negative finding. |
+
+Source URLs:
+
+- <https://github.com/github/copilot-cli/blob/main/README.md>
+  (raw, fetched 2026-07-02) — explicit statement that `GH_TOKEN`
+  is read with `GITHUB_TOKEN` as alternate; auth otherwise via
+  interactive `/login` slash command. Specifies that the
+  installation script honours `PREFIX` and `VERSION`.
+- <https://docs.github.com/copilot/concepts/agents/about-copilot-cli>
+  — describes the two CLI surfaces (interactive, programmatic
+  via `-p`/`--prompt`), modes (ask/execute + plan), Cloud + local
+  sandboxes (`copilot --cloud`, `/sandbox enable`). Says nothing
+  about a base-URL or provider-override knob — the CLI talks
+  exclusively to GitHub's API, full stop.
+
+### Negative findings (audit-relevant)
+
+- **No `OPENAI_BASE_URL` analogue**: GitHub Copilot CLI is
+  GitHub-API-bound. Provider switching is the language of the
+  `--allow-tool` permission system and the `/model` slash
+  command, neither of which is a Bifrost-style base-URL knob.
+- **No `COPILOT_BASE_URL` or `COPILOT_PROVIDER_URL` env**: not
+  documented anywhere in the verified source set. (Confirmed
+  again by the explicit 404 on the GitHub-published env-var
+  reference page.)
+- **Model selection**: TODO.md says "model override env" — for
+  copilot that maps to `"<provider>/<model-id>"`-style strings
+  via `/model`, not env vars. AO has no way to inject a model id
+  without writing a slash command into the prompt.
+
+### Implication for AO provider gateway
+
+The honest answer: **there is no clean AO-side route through
+Bifrost for the new GitHub Copilot CLI**. The CLI is
+
+1. **OAuth-tied to a GitHub account** (or a fine-grained PAT
+   with `Copilot Requests` permission) — there's no per-key, no
+   per-provider, no per-BaseURL knob.
+2. **Hard-bound to GitHub's API endpoints** — no override path.
+3. **Model selection is in-flow** via `/model` (interactive) or
+   per-prompt — not via an env var that AO could inject.
+
+Possible workarounds, each with caveats:
+
+- **PAT-on-the-wire** scheme: AO sets `GH_TOKEN=<fine-grained-pat-with-copilot-requests>`
+  in the session env. This still routes through GitHub's API, NOT
+  Bifrost — so this only helps if "Bifrost" means "the same
+  upstream endpoint that GH copilot already talks to" for audit
+  purposes. **Doesn't actually enable AO provider routing.**
+- **Slash-command injection via setting file**: along with the
+  CLI's persistent settings (configurable per the README's
+  experimental-flag persistence behaviour). The CLI doesn't
+  expose a published schema for this in the audited docs, so AO
+  would be reading the binary's settings file format.
+- **Wrap with a small shim CLI** that proxies to `copilot` while
+  injecting `/login` + `/provider …` slash commands. Non-trivial
+  and out of scope for AO's adapter; an "eventually-maybe" item.
+
+### Open question surfaced
+
+- **Document the gap explicitly in Phase 2 doctor output**: a
+  project's `provider = "copilot"` config has no Bifrost route,
+  by virtue of the upstream tool's design. AO should surface
+  this (probably as a non-fatal warning in `ao doctor`) rather
+  than silently use Copilot's API while the user thinks they're
+  routing through Bifrost. Not invented here; flag for the
+  Bifrost doctor PR.
+- **Why AO supports GitHub Copilot in the adapter registry at
+  all if there's no gateway route**: out of scope for this
+  audit. The audit notes the gap; whether AO should expose
+  `copilot` as a router-aware provider or demote it to
+  "explicit-mode only" is a UX policy decision. Flagged.
 
 

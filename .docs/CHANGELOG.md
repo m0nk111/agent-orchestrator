@@ -3,6 +3,74 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 8 — 2026-07-03 (Fase 2 Research: copilot)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — sixth slice, `copilot` audit, with
+  verified source and a notable negative finding.** Picked
+  next-highest-known CLI.
+- Confirmed the AO `copilot` adapter wraps the **new**
+  `copilot` CLI (npm `@github/copilot`), explicitly **not** the
+  older `gh copilot` extension. Adapter grep: only the
+  Windows-only `APPDATA` lookup (line 175); pass-through.
+- Authoritative sources verified live (2026-07-02):
+  - <https://github.com/github/copilot-cli/blob/main/README.md>
+    (raw, fetched 2026-07-02) — explicit auth-via-env:
+    `GH_TOKEN` (with `GITHUB_TOKEN` as alternate) are the only
+    documented env inputs; otherwise `/login` interactive OAuth.
+    Installation script honours `PREFIX` and `VERSION`.
+  - <https://docs.github.com/copilot/concepts/agents/about-copilot-cli>
+    — describes interactive + programmatic (`-p`/`--prompt`)
+    modes, plan mode (Shift+Tab), Cloud + local sandboxes
+    (`copilot --cloud`, `/sandbox enable`). Says nothing about a
+    base-URL or provider-override knob.
+- **Negative findings** (worth pinning as findings):
+  - GitHub does **not** publish an env-var reference page for the
+    new Copilot CLI:
+    `docs.github.com/en/copilot/reference/copilot-cli-reference/cli-environment-variables`
+    returns 404.
+  - No `OPENAI_BASE_URL` analogue, no `COPILOT_BASE_URL` /
+    `COPILOT_PROVIDER_URL` env var.
+  - Model selection is **in-flow** via `/model` slash command or
+    per-prompt — not inject-able via env var.
+- **Implication for AO Bifrost gateway**: there is **no clean
+  AO-side route through Bifrost for the new GitHub Copilot
+  CLI**. The CLI is OAuth-tied to a GitHub account (or fine-grained
+  PAT with `Copilot Requests` permission), hard-bound to GitHub's
+  API endpoints, with model-selection entirely in-flow. Possible
+  workarounds enumerated: PAT-on-the-wire (still routes via
+  GitHub's API, NOT Bifrost — doesn't actually enable AO provider
+  routing), slash-command injection via setting file (no
+  published schema), or wrapping with a small shim CLI (out of
+  scope for the adapter).
+- Two open questions surfaced (audit footer):
+  - Document the gap explicitly in Phase 2 `ao doctor` output
+    (warn-not-fatal) so users don't think they're routed through
+    Bifrost when they're routed through GitHub.
+  - Why AO exposes `copilot` in the adapter registry at all if
+    there's no gateway route — UX-policy decision flagged, not
+    invented here.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- 17 remaining adapters same as before. None blocked by
+  user-decisions.
+- Same open questions A/B/C from DECISIONS.md remain pending.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. `continueagent` next (open-source, full provider surface —
+   best chance of finding a clean gateway knob among remaining).
+2. `cursor` after (commercial product with bundled-provider
+   shape; likely OAuth-bound similar to copilot but worth pinning).
+3. `crush` follows (open-source, OpenAI-style provider list —
+   expected to be similar to aiding/codex in pattern).
+4. The lesser-known batch (`agy`, `vibe`, `kimi`, `kiro`, `pi`,
+   `qwen`, `grok`, `autohand`, `auggie`, `amp`, `devin`, `droid`,
+   `goose`, `kilocode`) deferred — many are likely commercial
+   successors to copilot with similar OAuth-binding.
+
 ## Iteratie 7 — 2026-07-03 (Fase 2 Research: cline)
 
 **Wat is geland**
