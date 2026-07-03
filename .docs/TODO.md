@@ -58,7 +58,8 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [x] `opencode` — audit in `.docs/research/opencode-env-audit.md` (commit 21f1403c).
 - [x] `claude-code` — audit in `.docs/research/opencode-env-audit.md` "claude-code" section; sourced from `https://code.claude.com/docs/en/env-vars` and `/docs/en/llm-gateway-connect` (verified 2026-07-02).
 - [x] `codex` — audit in same file "codex" section; sourced from `https://developers.openai.com/codex/auth` and `/config-basic` and `/config-advanced` (verified 2026-07-02). Key call-out: project-level `.codex/config.toml` **cannot** redefine providers; routing through Bifrost must write `~/.codex/config.toml` (user layer).
-- [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do.
+- [x] `aider` — audit in same file "aider" section; sourced from `https://aider.chat/docs/config.html` + `/docs/config/api-keys.html` + `/docs/llms/openai-compat.html` (verified 2026-07-02). Gateway knob: `OPENAI_API_BASE` + `OPENAI_API_KEY` (OpenAI-compat). Adapter: zero env-touches (pass-through).
+- [ ] `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do.
 - [ ] Decide Bifrost distribution mechanism: vendored binary download on first run, Docker container, or system package expectation
 - [ ] Confirm Bifrost's own bind-host default and whether it can be pinned to loopback-only (must match AO's own security posture)
 

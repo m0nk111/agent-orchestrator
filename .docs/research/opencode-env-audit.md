@@ -16,7 +16,8 @@ endpoint without per-adapter code branching.
 - [x] `opencode` — done below.
 - [x] `claude-code` — done in next section.
 - [x] `codex` — done further down.
-- [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
+- [x] `aider` — done further down still.
+- [ ] `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
 
 ## `opencode` (sst/opencode)
 
@@ -280,3 +281,104 @@ adapters get).
   subdir by default for per-project credential separation, or
   leave that to the eventual `internal/providers/` scaffold? Out
   of scope for adapter-row; flagged for the scaffold PR.
+
+---
+
+## `aider` (Aider-AI / aider-chat)
+
+Source: `backend/internal/adapters/agent/aider/aider.go`. Grep for
+`OPENAI_API_BASE|OPENAI_API_KEY|ANTHROPIC_API_KEY|AIDER_|os.Setenv|
+os.Getenv|env` returned **no matches**: the AO `aider` adapter
+passes no provider-related env vars to the spawned CLI today and
+does not override anything in its environment. Plain pass-through.
+
+What aider itself reads for **provider routing**, per the official
+docs (verified 2026-07-02):
+
+Aider uses three parallel configuration surfaces, equivalent by
+name (per <https://aider.chat/docs/config.html>):
+
+```
+$ aider --dark-mode
+# .aider.conf.yml: dark-mode: true
+# .env / shell: export AIDER_DARK_MODE=true
+```
+
+| Config surface        | Location                                       | Notes                                                     |
+|-----------------------|------------------------------------------------|-----------------------------------------------------------|
+| CLI flags             | every option has a `--<kebab>` switch          | highest precedence                                        |
+| YAML config           | `.aider.conf.yml` (repo root, or `~/.aider.conf.yml`) | one YAML doc; supports nested keys                       |
+| Env vars              | `AIDER_<UPPER_SNAKE>` for any CLI option        | auto-derived from the option name                         |
+| `.env` file           | standard dotenv-style entries                  | read like shell env vars                                  |
+
+Source: <https://aider.chat/docs/config.html>.
+
+### Provider keys (audit-relevant subset)
+
+Per <https://aider.chat/docs/config/api-keys.html>:
+
+| Variable                                                              | Purpose                                              |
+|-----------------------------------------------------------------------|------------------------------------------------------|
+| `OPENAI_API_KEY`                                                      | OpenAI key (also `--openai-api-key`)                 |
+| `ANTHROPIC_API_KEY`                                                   | Anthropic key (also `--anthropic-api-key`)           |
+| `OPENAI_API_BASE`                                                     | **Base URL for OpenAI-compat endpoints** (the gateway knob) |
+| `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` / …      | Per-provider env vars, name = `<PROVIDER>_API_KEY`.  |
+| `--api-key provider=<key>` (CLI)                                      | Equivalent to setting `<PROVIDER>_API_KEY=<key>` in env. |
+
+Per <https://aider.chat/docs/llms/openai-compat.html>, the exact
+recipe for an OpenAI-compatible endpoint:
+
+```
+export OPENAI_API_BASE=<endpoint>
+export OPENAI_API_KEY=<key>
+aider --model openai/<model-name>
+```
+
+### YAML config specifics
+
+Per <https://aider.chat/docs/config/aider_conf.html>, the YAML
+accepts two API-key forms:
+
+```
+openai-api-key: <key>          # special-case for OpenAI
+anthropic-api-key: <key>       # special-case for Anthropic
+api-key:
+  - gemini=foo                 # sets GEMINI_API_KEY=foo
+  - openrouter=bar             # sets OPENROUTER_API_KEY=bar
+```
+
+### Implication for AO provider gateway
+
+Routing aider through Bifrost is straightforward in two ways:
+
+1. **OpenAI-compat path** (model `openai/<name>`): inject
+   `OPENAI_API_BASE=<bifrost>` and `OPENAI_API_KEY=<bifrost-cred>`
+   in the spawned env. Already in the session's
+   `project.Config.Env`, no adapter code needed.
+2. **Anthropic** (`--model sonnet` etc.): inject
+   `ANTHROPIC_API_KEY=<bifrost-cred>` plus optionally
+   `ANTHROPIC_BASE_URL` (aider's Anthropic path does **not** seem
+   to expose a separate base-URL env on the docs pages audited
+   here — the OpenAI-compat path is the generic gateway knob).
+   Worth a follow-up if users need Anthropic-direct routing.
+
+The three layered config surfaces (CLI > YAML > env > `.env`) mean
+the AO side has to set vars at the env layer (which sits *above*
+`.env` but *below* the YAML the user might already have in the
+repo). Bash env-set wins over `.aider.conf.yml`-if-the-user-doesn't-
+list-the-key, which is the common case.
+
+### Open question surfaced
+
+- **Anthropic-direct base URL knob**: the docs audited here
+  don't show a separate `ANTHROPIC_BASE_URL` analogue for aider's
+  Anthropic integration (the docs reference the
+  `ANTHROPIC_API_KEY` env var and `--anthropic-api-key` CLI flag,
+  but no base URL knob surfaces). For users who want to keep
+  Anthropic routing on the gateway, AO would have to (a) fall
+  through to OpenAI-compat mode by setting `--model openai/<custom>`
+  plus `OPENAI_API_BASE`, or (b) wait for aider's Anthropic
+  integration to expose a base URL knob. Not invented here;
+  flagged for the Bifrost design discussion.
+
+

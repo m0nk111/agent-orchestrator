@@ -3,6 +3,69 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 6 — 2026-07-03 (Fase 2 Research: aider)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — fourth slice, `aider` audit, with
+  verified source.** Picked as next-best-known CLI on the audit
+  queue (per the iteratie-5 list of remaining high-yield targets).
+- Authoritative sources surfaced and verified live (2026-07-02):
+  - <https://aider.chat/docs/config.html> — Aider's three
+    equivalent config surfaces (CLI > YAML > env > `.env`) and the
+    `AIDER_<UPPER_SNAKE>` env-var convention auto-derived from
+    kebab-case CLI flags (`--dark-mode` → `AIDER_DARK_MODE`).
+  - <https://aider.chat/docs/config/api-keys.html> — how
+    API keys flow: OpenAI/Anthropic have dedicated
+    `--openai-api-key`/`--anthropic-api-key` CLI switches and
+    `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` env vars; other
+    providers use `--api-key provider=<key>` which sets the
+    `<PROVIDER>_API_KEY` env var at the shell, plus matching
+    `<PROVIDER>_API_KEY` in `.env` or YAML.
+  - <https://aider.chat/docs/llms/openai-compat.html> — the exact
+    recipe for OpenAI-compat endpoints (the gateway route):
+    `OPENAI_API_BASE=<endpoint>`, `OPENAI_API_KEY=<key>`,
+    `--model openai/<model-name>`.
+- Grep of `backend/internal/adapters/agent/aider/aider.go` for
+  `OPENAI_API_BASE|OPENAI_API_KEY|ANTHROPIC_API_KEY|AIDER_|os.Setenv|
+  os.Getenv|env`: **zero matches**. The AO `aider` adapter is
+  pure pass-through — it spawns the CLI with whatever env the
+  project session already plumbs through. This is the cleanest
+  audit result so far: routing aider through Bifrost needs nothing
+  on the adapter side, AO just sets `OPENAI_API_BASE` +
+  `OPENAI_API_KEY` in `project.Config.Env`.
+- New audit section appended to
+  `.docs/research/opencode-env-audit.md` (one audit file, four
+  adapter sections — keeps TODO.md's pointer stable).
+- `.docs/TODO.md` Phase 2 Research #1 progress sub-list ticked:
+  `aider` `[ ] → [x]` with source citation inline.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- 19 remaining adapters same as last iteration. None are
+  user-blocked; can still go.
+- One open question surfaced in the audit footer: aider's
+  Anthropic integration docs (as audited here) do not show a
+  separate `ANTHROPIC_BASE_URL` knob (only `ANTHROPIC_API_KEY` /
+  `--anthropic-api-key`). If users want Anthropic-direct gateway
+  routing, AO either has to fall through to the OpenAI-compat
+  path (forcing `--model openai/<custom>`) or wait for aider to
+  expose a base-URL knob. Not invented here. Worth flagging in
+  the Bifrost design discussion but not blocking this row.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. `cline` next (high-yield: well-known provider knobs, similar
+   to aider in pattern).
+2. `copilot` after (slightly different shape: usually tied to a
+   GitHub-account login rather than per-provider env keys).
+3. The lesser-knowns (`agy`, `vibe`, `kimi`, `kiro`, `pi`, `qwen`,
+   `grok`, `continueagent`, `autohand`, `auggie`, `amp`) as a
+   later batch once the established CLIs are mapped.
+4. Independent of audit progress, the cross-platform smoke
+   matrix (Linux-only currently) remains queued as a low-risk
+   effective improvement for a non-Research #1 iteration.
+
 ## Iteratie 5 — 2026-07-03 (Fase 2 Research: codex)
 
 **Wat is geland**
