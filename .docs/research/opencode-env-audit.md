@@ -1175,4 +1175,241 @@ needs to inject `CRUSH_OPENAI_API_KEY`, `AO_BIFROST_BASE`,
   to AO-managed paths naturally; but that's an XOR-followup, not
   Bifrost-shape.
 
+## `kilocode` (Kilo-Org/kilocode, binary `kilocode` alias `kilo`, npm `@kilocode/cli`)
+
+Source adapter:
+`backend/internal/adapters/agent/kilocode/kilocode.go` (323 lines,
+package `kilocode`, adapter ID `"kilocode"`).
+
+### Adapter self-description (verbatim from source)
+
+> "Package kilocode implements the Kilo Code CLI agent adapter: launching new
+> TUI sessions, resuming sessions by native id, installing a workspace-local
+> activity plugin, and reading plugin-derived session info.
+>
+> The Kilo Code CLI (binary "kilocode", also aliased "kilo"; npm package
+> @kilocode/cli) is a fork of sst/opencode and shares its CLI surface and
+> plugin runtime, so AO bridges it the same two ways it bridges opencode:
+>   - It has no native command-hook config … Its only
+>     lifecycle-extensibility surface is the @opencode-ai plugin SDK loaded
+>     from a config dir's `{plugin,plugins}/*.{ts,js}` glob …
+>   - Its interactive TUI exposes no permission flag (the --auto flag lives only
+>     on `kilo run`, not the default TUI command AO launches) and no
+>     system-prompt flag. AO's graduated permission modes are delivered via the
+>     **KILO_CONFIG_CONTENT** env var, which Kilo deep-merges as the
+>     highest-precedence inline config; the system prompt defers to Kilo's own
+>     config."
+> — `kilocode.go:1-22`
+
+Launch argv:
+
+```
+[env KILO_CONFIG_CONTENT=<json>] kilocode [--prompt <prompt>]
+```
+
+Restore argv:
+
+```
+[env KILO_CONFIG_CONTENT=<json>] kilocode --session <agentSessionId>
+```
+
+The adapter constructs the `KILO_CONFIG_CONTENT=<json>` prefix as the
+**first** argv element (wrapped in `env` so the shell actually
+performs the assignment, since the runtime quotes elements that would
+otherwise be command tokens) — see `kilocode.go:208-225`. The
+permission-to-action shape is `{"permission": {"edit": "allow", ...}}`.
+
+Permission flag mapping (per `kilocode.go:186-197`):
+
+| AgentOps permission | Kilo config payload injected via env |
+|---|---|
+| `Default`           | *(no env; Kilo's config decides)*      |
+| `AcceptEdits`       | `{"permission": {"edit": "allow"}}`    |
+| `Auto`              | `{"permission": {"edit": "allow", "bash": "allow"}}` |
+| `BypassPermissions` | `{"permission": {"*": "allow"}}`       |
+
+No native system-prompt flag — Kilo resolves system prompts from its
+own config + `AGENTS.md` rules.
+
+### Env-var surface — adapter itself
+
+The adapter touches **exactly one** environment variable, and it's
+the same Windows-binary-resolution pattern as the other adapters:
+
+- `APPDATA` — at `kilocode.go:259` for the Windows PATH-resolution
+  fallback (`%APPDATA%/npm/kilocode.cmd` etc.).
+
+No other env reads/writes in the adapter source.
+
+### Env-var surface — Kilo CLI proper
+
+Primary source for the upstream is
+[`Kilo-Org/kilocode`](https://github.com/Kilo-Org/kilocode). Verified
+paths:
+
+#### `KILO_CONFIG_CONTENT` (and the config precedence)
+
+Authoritative per the AO adapter header comment
+(`kilocode.go:166-173`):
+
+> "It is the permission-control surface the interactive TUI honors …
+> CLI's config precedence: **global -> `KILO_CONFIG` -> ./kilo.json ->
+> .kilo/kilo.json -> `KILO_CONFIG_CONTENT` -> managed**; later wins."
+
+So the full surface of config-overriding env vars is:
+
+| Env var                       | Purpose                              |
+|-------------------------------|--------------------------------------|
+| `KILO_CONFIG_CONTENT`         | Highest-precedence inline JSON config| 
+| `KILO_CONFIG`                 | File-path override for the second tier |
+
+Both are real, both are honored by Kilo. AO already uses the top one
+(`KILO_CONFIG_CONTENT` is set in argv by the adapter for permission
+modes).
+
+#### Per-provider env-var catalog
+
+The Kilo provider registry is a data-driven model. Direct fetch of
+`packages/core/src/config/provider.ts` confirms the per-provider shape:
+
+```ts
+export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
+  name: Schema.String.pipe(Schema.optional),
+  env: Schema.String.pipe(Schema.Array, Schema.optional),
+  endpoint: ProviderV2.Endpoint.pipe(Schema.optional),
+  options: Options.pipe(Schema.optional),
+  models: Schema.Record(Schema.String, Model).pipe(Schema.optional),
+}) {}
+```
+
+— i.e. each provider entry can declare:
+  - `env: string[]` — a list of env-var names whose presence enables
+    the provider (e.g. `["ANTHROPIC_API_KEY"]`).
+  - `endpoint: string` — per-provider endpoint override (e.g. a
+    self-hosted URL).
+  - `options.baseURL` / `options.apiKey` — inline credential/URL.
+
+The activation logic is in
+[`EnvPlugin`](https://github.com/Kilo-Org/kilocode/blob/main/packages/core/src/plugin/env.ts)
+— a 22-line plugin that on `catalog.transform` iterates each
+provider's `env: []` list and, when any key is set in `process.env`,
+flags that provider as `enabled: { via: "env", name: <key> }`.
+
+That plugin is the **runtime mechanism** by which Kilo auto-picks
+the active provider. Every provider's `env: []` list is the
+*Bifrost-hook fingerprint*.
+
+#### Per-provider env-var table (cross-checked from docs)
+
+Direct-fetch of `packages/kilo-docs/pages/ai-providers/*.md` confirms
+the per-provider env-var list (each provider entry in `kilo.json`
+uses these):
+
+```
+ANTHROPIC_API_KEY                  → anthropic
+OPENAI_API_KEY                     → openai
+GOOGLE_GENERATIVE_AI_API_KEY       → gemini
+DEEPSEEK_API_KEY                   → deepseek
+GROQ_API_KEY                       → groq
+CEREBRAS_API_KEY                   → cerebras
+FIREWORKS_API_KEY                  → fireworks
+HF_TOKEN                           → huggingface
+MISTRAL_API_KEY                    → mistral
+OPENROUTER_API_KEY                 → openrouter
+AWS_ACCESS_KEY_ID,                 → bedrock (also AWS_SECRET_ACCESS_KEY,
+AWS_SECRET_ACCESS_KEY,                       AWS_REGION, AWS_PROFILE,
+AWS_REGION,                                  AWS_BEARER_TOKEN_BEDROCK)
+AWS_BEARER_TOKEN_BEDROCK
+GOOGLE_CLOUD_PROJECT,              → vertex (also
+GOOGLE_CLOUD_LOCATION                        GOOGLE_CLOUD_PROJECT_ID, etc.)
+CLOUDFLARE_ACCOUNT_ID,             → cloudflare (also
+CLOUDFLARE_API_KEY                           CLOUDFLARE_GATEWAY_ID,
+                                            CLOUDFLARE_API_TOKEN)
+```
+
+(Verified by curl-fetching each `*.md` page and grepping `export `
+for the env-var name and the `env: [...]` JSON snippet.)
+
+#### `KILO_CONFIG_CONTENT` shape for routing
+
+The JSON schema for the inline config is precisely:
+
+```jsonc
+{
+  "provider": {
+    "<vendor-id>": {
+      "npm": "@ai-sdk/openai-compatible",  // or openai, or anthropic
+      "env": ["<TOKEN_ENV_VAR_NAME>"],     // optional; presence activation
+      "options": {
+        "apiKey": "<token-or-literal>",
+        "baseURL": "<full-provider-url>"
+      },
+      "models": { "<model-id>": { "name": "...", "limit": {"context":N,"output":M} } }
+    }
+  }
+}
+```
+
+Verified by direct-fetch of
+`packages/kilo-docs/pages/ai-providers/openai-compatible.md` (the
+"Custom OpenAI-compatible provider" guide, lines 80-130). The same
+provider is named `baseURL` in the JSON options, with full-endpoint
+support: e.g. `https://api.provider.com/v1/chat/completions` is a
+valid `baseURL` value.
+
+### Negative findings (audit-relevant)
+
+- **No global `KILO_BASE_URL`** (or any provider-wide base-URL env
+  knob). The pattern is per-provider in `kilo.json` / `kilo.jsonc`,
+  just like opencode / crush.
+- **`OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` style env vars aren't
+  used by Kilo as first-class routing hooks.** The user must put
+  the URL in `kilo.json`, exact same shape as the cluster of
+  pass-through adapters above.
+
+### Implication for AO provider gateway
+
+Kilo is the **fourth clean Bifrost route** in the queue (after
+claude-code, continueagent, crush) and the **cleanest so far**
+because:
+
+1. Kilo already accepts a JSON config blob via `KILO_CONFIG_CONTENT`
+   and the adapter is *already* writing JSON to that env var
+   (for permission modes — see `kilocode.go:166-225`). The Bifrost
+   gateway entry can **piggyback on the same wiring**: salt the
+   permission JSON or extend the schema with a `provider` block.
+2. The `EnvPlugin` activation check (scan provider's `env: []`)
+   means AO can opt-in to activation by setting one env var
+   per provider; that variable can be a *literal token*, or
+   `KILO_BIFROST_PROVIDER_TOKEN`, lifted and not exported elsewhere.
+3. Per-provider `baseURL` is config-only. AO must inject a JSON
+   config block (either via `KILO_CONFIG_CONTENT` or by writing
+   `kilo.json` in workspace) that names a Bifrost entry
+   (e.g. `provider.bifrost` with `npm: "@ai-sdk/openai-compatible"`).
+4. **No adapter change needed.** The AO adapter is already a clean
+   pass-through (single `APPDATA` Windows lookup, no API key,
+   no base URL touches).
+
+### Adapter changes needed for Bifrost
+
+**None.** The kilocode adapter is a clean pass-through. Future
+gateway writer can either:
+- extend `kilocodePermissionEnvPrefix` (`kilocode.go:208`) to include
+  the Bifrost provider entry alongside the permission JSON, or
+- write the Bifrost entry to the user's `kilo.json` separately.
+Neither path requires editing the launch-argv logic.
+
+### Open question surfaced
+
+- **How piggyback-friendly is `KILO_CONFIG_CONTENT`?** Today the
+  adapter writes only `{"permission": {...}}`. The same env var
+  accepts a full provider config (root keys `provider.*`, `model`,
+  etc.). Whether the Bifrost gateway writer uses this same env var
+  (clean; just one env-var setup) or a separate config-file write
+  to `kilo.json` (cleaner separation; slower) is an AO-internal
+  decision. Two-tagged options, **not flagged**.
+- **`KILO_CONFIG` as a path override** — useful for AO_HOME-friendliness
+  (redirect Kilo's config dir to under `AO_HOME/kilo/`), but
+  separate from Bifrost routing. Surface flagged; Phase-2 followup.
+
 

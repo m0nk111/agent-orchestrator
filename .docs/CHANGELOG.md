@@ -3,6 +3,95 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 12 — 2026-07-03 (Fase 2 Research: kilocode)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `kilocode` (Kilo-Org fork of
+  sst/opencode, binary `kilocode` alias `kilo`, npm `@kilocode/cli`).
+  Section appended to `.docs/research/opencode-env-audit.md`.
+- Source citations (all direct-fetched 2026-07-03):
+  - `backend/internal/adapters/agent/kilocode/kilocode.go:1-22` —
+    verbatim self-description: "fork of sst/opencode and shares its
+    CLI surface and plugin runtime, so AO bridges it the same two
+    ways it bridges opencode".
+  - `kilocode.go:166-225` — adapter launches with
+    `[env KILO_CONFIG_CONTENT=<json>] kilocode [--prompt ...]`,
+    permission mapping at lines 186-197:
+    - `Default` → no env
+    - `AcceptEdits` → `{"permission":{"edit":"allow"}}`
+    - `Auto` → `{"permission":{"edit":"allow","bash":"allow"}}`
+    - `BypassPermissions` → `{"permission":{"*":"allow"}}`
+  - `kilocode.go:166-173` — CLI config precedence commentary
+    (verbatim): **`global -> KILO_CONFIG -> ./kilo.json ->
+    .kilo/kilo.json -> KILO_CONFIG_CONTENT -> managed`**, later wins.
+  - `Kilo-Org/kilocode/packages/core/src/config/provider.ts` —
+    `class Info extends Schema.Class<Info>("ConfigV2.Provider")` with
+    `name`, `env: Schema.String[].optional`,
+    `endpoint: ProviderV2.Endpoint.optional`, `options`, `models`.
+  - `packages/core/src/plugin/env.ts` — 22-line `EnvPlugin` scans
+    each `evt.provider.list()`, picks first `env: []` entry that's
+    set in `process.env`, then marks that provider
+    `enabled: { via: "env", name: <key> }`.
+  - `packages/kilo-docs/pages/ai-providers/{anthropic,openai,gemini,
+    deepseek,groq,cerebras,bedrock,vertex,fireworks,cloudflare,
+    chutes-ai}.md` — per-provider env-vars confirmed:
+    `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+    `GOOGLE_GENERATIVE_AI_API_KEY`, `DEEPSEEK_API_KEY`,
+    `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `FIREWORKS_API_KEY`,
+    `HF_TOKEN`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`,
+    `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION`
+    / `AWS_BEARER_TOKEN_BEDROCK`,
+    `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`,
+    `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_KEY`
+    / `CLOUDFLARE_GATEWAY_ID` / `CLOUDFLARE_API_TOKEN`.
+  - `packages/kilo-docs/pages/ai-providers/openai-compatible.md` —
+    JSON-shape with `provider.<id>.npm` (AI SDK family),
+    `.env` (activation array), `.options.apiKey`, `.options.baseURL`,
+    `.models.<model-id>`. Lines 80-130 confirm full-endpoint
+    `baseURL` is supported.
+- Adapter env-touches: exactly one — `APPDATA` at `kilocode.go:259`
+  (Windows binary-path resolution only). Zero other reads/writes.
+  Adapter is a clean pass-through.
+
+**Conclusie**
+
+- Kilo is **the fourth clean Bifrost route in the queue** (after
+  claude-code, continueagent, crush) and the **cleanest so far**
+  because the adapter is *already* a writer for one of the env
+  vars in the routing trail:
+  1. Kilo already accepts the inline JSON via `KILO_CONFIG_CONTENT`.
+     The Bifrost gateway entry can piggyback on the same wiring,
+     extending the JSON with a `provider` block (no new env var,
+     no config-file write — just extend).
+  2. `EnvPlugin`'s activation check scans `env: []`, so a single
+     env var per provider (e.g. `KILO_BIFROST_PROVIDER_TOKEN=…`)
+     flags it active.
+  3. Per-provider `baseURL` is *config-only* — no global
+     `KILO_BASE_URL` (or vendor-wide `OPENAI_BASE_URL` /
+     `ANTHROPIC_BASE_URL`) is honored. AO must put the Bifrost
+     URL into the `provider` block inside the same JSON.
+  4. **No adapter change needed.** Single `APPDATA` Windows lookup
+     stays. Adapter is fully pass-through.
+
+**Open questions surfaced**
+
+- **Piggyback shape choice** for the JSON the gateway writes:
+  (a) extend the existing `KILO_CONFIG_CONTENT` permission-mode
+  JSON (cleaner, one env var); (b) write a separate
+  `kilo.json` to project/user config (slower, no env-var soup).
+  AO-internal decision; not Phase-2-blocking.
+- **`KILO_CONFIG` path-override env var** is the AO_HOME-friendliness
+  anchor for kilo (redirect data dir under `AO_HOME/kilo/`); flagged
+  as a Phase-2 followup, not audited in this iteration.
+
+**Verificatie / gates**
+
+- Markdown / section structure verified by re-reading the file via
+  `Edit` (write state tracked). No Go / TS code touched this
+  round — research slice only. Gates deferred (no source files
+  modified).
+
 ## Iteratie 11 — 2026-07-03 (Fase 2 Research: crush)
 
 **Wat is geland**
