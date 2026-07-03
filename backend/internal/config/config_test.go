@@ -10,7 +10,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Clear every recognised var so we observe pure defaults regardless of the
 	// surrounding environment.
-	for _, k := range []string{"AO_PORT", "AO_REQUEST_TIMEOUT", "AO_SHUTDOWN_TIMEOUT", "AO_RUN_FILE", "AO_DATA_DIR", "AO_AGENT", "AO_ALLOWED_ORIGINS", "AO_TELEMETRY_EVENTS", "AO_TELEMETRY_METRICS", "AO_TELEMETRY_REMOTE", "AO_TELEMETRY_POSTHOG_KEY", "AO_TELEMETRY_POSTHOG_HOST"} {
+	for _, k := range []string{"AO_PORT", "AO_REQUEST_TIMEOUT", "AO_SHUTDOWN_TIMEOUT", "AO_RUN_FILE", "AO_DATA_DIR", "AO_HOME", "AO_AGENT", "AO_ALLOWED_ORIGINS", "AO_TELEMETRY_EVENTS", "AO_TELEMETRY_METRICS", "AO_TELEMETRY_REMOTE", "AO_TELEMETRY_POSTHOG_KEY", "AO_TELEMETRY_POSTHOG_HOST"} {
 		t.Setenv(k, "")
 	}
 
@@ -59,6 +59,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("AO_SHUTDOWN_TIMEOUT", "3s")
 	t.Setenv("AO_RUN_FILE", "/tmp/ao-test-running.json")
 	t.Setenv("AO_DATA_DIR", "/tmp/ao-test-data")
+	t.Setenv("AO_HOME", "")
 	t.Setenv("AO_TELEMETRY_EVENTS", "on")
 	t.Setenv("AO_TELEMETRY_METRICS", "off")
 	t.Setenv("AO_TELEMETRY_REMOTE", "posthog")
@@ -157,4 +158,85 @@ func TestLoadAllowedOrigins(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestLoadAOHome(t *testing.T) {
+	// These sub-cases pin the precedence for the AO_HOME additive override. The
+	// default location ($HOME/.ao) must remain unchanged for anyone not setting
+	// AO_HOME; AO_RUN_FILE / AO_DATA_DIR keep winning when explicitly set; and
+	// an empty AO_HOME must be treated as unset (consistent with the
+	// surrounding AO_* pattern).
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	wantRunFile := filepath.Join(homeDir, ".ao", "running.json")
+	wantDataDir := filepath.Join(homeDir, ".ao", "data")
+
+	tests := []struct {
+		name        string
+		env         map[string]string
+		wantRun     string
+		wantDataDir string
+	}{
+		{
+			name:        "AO_HOME alone is used as the AO root",
+			env:         map[string]string{"AO_HOME": "/tmp/ao-home-a"},
+			wantRun:     filepath.Join("/tmp/ao-home-a", "running.json"),
+			wantDataDir: filepath.Join("/tmp/ao-home-a", "data"),
+		},
+		{
+			name: "AO_RUN_FILE keeps winning over AO_HOME",
+			env: map[string]string{
+				"AO_HOME":     "/tmp/ao-home-b",
+				"AO_RUN_FILE": "/tmp/ao-explicit-run.json",
+			},
+			wantRun:     "/tmp/ao-explicit-run.json",
+			wantDataDir: filepath.Join("/tmp/ao-home-b", "data"),
+		},
+		{
+			name: "AO_DATA_DIR keeps winning over AO_HOME",
+			env: map[string]string{
+				"AO_HOME":     "/tmp/ao-home-c",
+				"AO_DATA_DIR": "/tmp/ao-explicit-data",
+			},
+			wantRun:     filepath.Join("/tmp/ao-home-c", "running.json"),
+			wantDataDir: "/tmp/ao-explicit-data",
+		},
+		{
+			name:        "empty AO_HOME is treated as unset",
+			env:         map[string]string{"AO_HOME": ""},
+			wantRun:     wantRunFile,
+			wantDataDir: wantDataDir,
+		},
+		{
+			name:        "neither set falls back to $HOME/.ao",
+			env:         map[string]string{"AO_HOME": ""},
+			wantRun:     wantRunFile,
+			wantDataDir: wantDataDir,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset every recognised var so each sub-case observes a clean slate,
+			// then apply only the variables this case cares about.
+			for _, k := range []string{"AO_RUN_FILE", "AO_DATA_DIR", "AO_HOME"} {
+				t.Setenv(k, "")
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.RunFilePath != tc.wantRun {
+				t.Errorf("RunFilePath = %q, want %q", cfg.RunFilePath, tc.wantRun)
+			}
+			if cfg.DataDir != tc.wantDataDir {
+				t.Errorf("DataDir = %q, want %q", cfg.DataDir, tc.wantDataDir)
+			}
+		})
+	}
 }

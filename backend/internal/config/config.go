@@ -111,8 +111,9 @@ func (c Config) Addr() string {
 //	AO_PORT              bind port           (default 3001)
 //	AO_REQUEST_TIMEOUT   per-request timeout (Go duration > 0, default 60s)
 //	AO_SHUTDOWN_TIMEOUT  shutdown deadline   (Go duration > 0, default 10s)
-//	AO_RUN_FILE          running.json path   (default ~/.ao/running.json)
-//	AO_DATA_DIR          durable state dir   (default ~/.ao/data)
+//	AO_HOME              single-root override for every AO path (default ~/.ao)
+//	AO_RUN_FILE          running.json path   (default $AO_HOME/running.json)
+//	AO_DATA_DIR          durable state dir   (default $AO_HOME/data)
 //	AO_AGENT             compatibility agent id (default claude-code)
 //	AO_ALLOWED_ORIGINS   CORS origins, comma-separated (default DefaultAllowedOrigins)
 //	AO_TELEMETRY_EVENTS  local event capture off|on (default off)
@@ -294,6 +295,12 @@ func resolveDataDir() (string, error) {
 }
 
 func defaultStateDir() (string, error) {
+	// AO_HOME is the additive single-root override that relocates the entire
+	// AO footprint. Empty string is treated as unset, matching how the
+	// surrounding AO_* reads use LookupEnv + non-empty checks.
+	if raw, ok := os.LookupEnv("AO_HOME"); ok && raw != "" {
+		return raw, nil
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve state dir: %w", err)
