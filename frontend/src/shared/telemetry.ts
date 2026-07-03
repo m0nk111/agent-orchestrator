@@ -15,7 +15,12 @@ export function defaultDataDir(
 	homeDir: string,
 ): string | null {
 	void platform;
+	// AO_DATA_DIR keeps winning over everything else: it's the narrow
+	// per-component override. AO_HOME is the additive single-root that
+	// relocates the rest of the AO footprint, so it takes precedence over the
+	// default $HOME/.ao location.
 	if (env.AO_DATA_DIR) return env.AO_DATA_DIR;
+	if (env.AO_HOME) return path.join(env.AO_HOME, "data");
 	if (!homeDir) return null;
 	return path.join(homeDir, ".ao", "data");
 }

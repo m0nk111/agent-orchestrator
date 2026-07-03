@@ -18,6 +18,34 @@ test("defaultDataDir prefers AO_DATA_DIR", () => {
 	expect(defaultDataDir("linux", { AO_DATA_DIR: "/tmp/custom" }, "/home/test")).toBe("/tmp/custom");
 });
 
+test("defaultDataDir uses AO_HOME when AO_DATA_DIR is unset", () => {
+	expect(defaultDataDir("linux", { AO_HOME: "/srv/ao" }, "/home/test")).toBe(
+		path.join("/srv/ao", "data"),
+	);
+});
+
+test("defaultDataDir keeps AO_DATA_DIR winning over AO_HOME", () => {
+	expect(
+		defaultDataDir(
+			"linux",
+			{ AO_HOME: "/srv/ao", AO_DATA_DIR: "/tmp/explicit" },
+			"/home/test",
+		),
+	).toBe("/tmp/explicit");
+});
+
+test("defaultDataDir falls back to $HOME/.ao/data when AO_HOME is unset", () => {
+	expect(defaultDataDir("linux", {}, "/home/test")).toBe(
+		path.join("/home/test", ".ao", "data"),
+	);
+});
+
+test("defaultDataDir treats empty AO_HOME as unset", () => {
+	expect(defaultDataDir("linux", { AO_HOME: "" }, "/home/test")).toBe(
+		path.join("/home/test", ".ao", "data"),
+	);
+});
+
 test("loadOrCreateTelemetryInstallId persists a stable install id", async () => {
 	const dir = await mkdtemp(path.join(os.tmpdir(), "ao-telemetry-"));
 	tempDirs.push(dir);
