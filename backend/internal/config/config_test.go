@@ -215,6 +215,18 @@ func TestLoadAOHome(t *testing.T) {
 			wantRun:     wantRunFile,
 			wantDataDir: wantDataDir,
 		},
+		{
+			name:        "Windows-style AO_HOME is returned verbatim by defaultStateDir",
+			env:         map[string]string{"AO_HOME": `C:\Users\me\state`},
+			wantRun:     `C:\Users\me\state/running.json`,
+			wantDataDir: `C:\Users\me\state/data`,
+		},
+		{
+			name:        "mixed-slash AO_HOME is returned verbatim",
+			env:         map[string]string{"AO_HOME": "C:/Users/me/state"},
+			wantRun:     "C:/Users/me/state/running.json",
+			wantDataDir: "C:/Users/me/state/data",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
