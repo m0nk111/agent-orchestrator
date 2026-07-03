@@ -2140,6 +2140,261 @@ in `autohand.go`.
   loader at `$AO_HOME/autohand/config.json`).
   Surface flagged; Phase-2 followup.
 
+## `devin` (Cognition "Devin for Terminal", binary `devin`, GitHub `CognitionAI/devin-cli`)
+
+Source adapter:
+`backend/internal/adapters/agent/devin/devin.go` (283 lines),
+package `devin`, adapter ID `"devin"`,
++ `devin_test.go` (279 lines).
+
+### Adapter self-description (verbatim)
+
+> "Package devin implements the Devin ("Devin for Terminal",
+> Cognition) agent adapter.
+>
+> Devin for Terminal (binary "devin") is Cognition's terminal
+> coding agent. It has a documented Claude Code compatibility
+> layer: it imports `.claude/` configuration (commands,
+> subagents, and Claude Code lifecycle hooks), storing the
+> converted hooks in `.devin/hooks.v1.json`. Because of this,
+> AO reuses the Claude Code hook installer (which writes
+> .claude/settings.local.json with AO hook commands) and
+> Devin picks them up via its compat layer. This makes Devin
+> a Tier B (Claude-compat) adapter, mirroring the grok
+> adapter.
+>
+> Launch uses `-p <prompt>` for the initial task in
+> non-interactive/print mode (in-command delivery).
+> Permission handling uses `--permission-mode`, whose valid
+> values are `normal` (aliases: auto) and `dangerous`
+> (aliases: yolo, bypass). AO's four permission modes are
+> mapped onto these two: Default emits no flag, AcceptEdits/
+> Auto map to `auto`, and BypassPermissions maps to
+> `dangerous`.
+>
+> Restore prefers the hook-captured native session id via
+> `-r <id>`."
+> — `devin.go:1-22`
+
+Launch argv (`devin.go:86-100`):
+
+```
+devin [--permission-mode <mode>] -p <prompt>
+```
+
+Restore argv (`devin.go:135-154`):
+
+```
+devin [--permission-mode <mode>] -r <agentSessionId>
+```
+
+Approval mapping (`devin.go:253-266`):
+
+| AgentOps mode         | Devin argv fragment |
+|-----------------------|---------------------|
+| `Default`             | *(no flag — defer to `~/.config/devin/config.json` default mode)* |
+| `AcceptEdits`         | `--permission-mode auto` |
+| `Auto`                | `--permission-mode auto` |
+| `BypassPermissions`   | `--permission-mode dangerous` |
+
+Hook installation (`devin.go:125-130`) is delegated
+**directly** to the `claudecode.Plugin`:
+
+```go
+func (p *Plugin) GetAgentHooks(...) error {
+    return (&claudecode.Plugin{}).GetAgentHooks(ctx, cfg)
+}
+```
+
+— i.e. Devin re-uses Claude Code's `.claude/settings.local.json`
+hook installer because the binary's
+`config-importers/.../claude` + `agent-ext/hooks/importers/claude`
+layer converts Claude-compat hooks (SessionStart,
+UserPromptSubmit, Stop, PermissionRequest, SessionEnd, ...)
+on load (verbatim, `devin.go:111-124`). Devin is therefore
+in AO's "tooling group" `claude-code` in `cli/hooks.go`
+(same as the adapter doc claims).
+
+### Env-var surface — adapter itself
+
+**Zero env reads / writes.** Confirmed with a recursive grep
+over `devin.go`:
+
+```
+grep "os.Getenv\|os.LookupEnv" backend/internal/adapters/agent/devin/devin.go
+→ (no matches)
+```
+
+The only `os.*` touches are `os.UserHomeDir()` for binary-path
+candidates (`devin.go:191, 215`) and `os.Stat()` for
+file-exists checks (`devin.go:281-283`). **No AO-gateway
+env knobs.**
+
+Binary resolution is hard-coded to `devin.cmd`, `devin.exe`,
+`devin` (Windows); `/usr/local/bin/devin`,
+`/opt/homebrew/bin/devin`,
+`~/.devin/bin/devin`,
+`~/.local/bin/devin` (POSIX).
+(`devin.go:181-220`.)
+
+### Env-var surface — Devin CLI proper (closed-source)
+
+The CLI's source repo is minimal. `CognitionAI/devin-cli`
+(a public GitHub repo) holds only:
+
+```
+.github/workflows/release-from-manifest.yml
+README.md
+scripts/release_from_manifest.py
+```
+
+— i.e. `devin-cli` is a **manifest stub** that points users
+back at the docs (`README.md` is effectively: "Try Devin CLI:
+https://docs.devin.ai/cli"). The actual binary is published
+**separately** and is closed-source. This matches the
+closed-source pattern already audited for `cursor`, `amp`,
+and `auggie`.
+
+#### `https://docs.devin.ai/cli` (direct-fetched 2026-07-03)
+
+Direct-fetched via WebFetch. The page lists install
+steps and 4 "What's next" cards (Essential Commands,
+Models, Extensibility, Command Reference) but
+**does not name any env vars related to provider
+routing** (no `DEVIN_API_KEY`, no `DEVIN_BASE_URL`,
+no `OPENAI_*`, no `ANTHROPIC_*`). Page verdict: empty.
+
+#### `https://docs.devin.ai/cli/models` (direct-fetched 2026-07-03)
+
+Quoted verbatim from page:
+
+> "Devin CLI supports multiple AI models. You can choose
+> the best model for your task to optimize for maximum
+> capability, speed, or cost efficiency.
+>
+> Adaptive — For most users, we recommend **Adaptive** —
+> our intelligent model router that automatically selects
+> the best model for each task...
+>
+> Models release frequently. We typically support the
+> latest and greatest models from **Anthropic**,
+> **OpenAI**, **Google**, and **Cognition**...
+>
+> Short names like `opus`, `sonnet`, `swe`, `codex`,
+> and `gemini` always resolve to the latest version in
+> that model family.
+>
+> Some models support configurable reasoning levels...
+> You can cycle the thinking level with `Alt+T` (macOS:
+> `Opt+T`) during a session.
+>
+> Setting the Model — command-flag tab:
+> `devin --model opus -- refactor this module`
+> `devin --model sonnet -- explain this code`
+>
+> Slash command tab:
+> `/model opus`
+> `/model sonnet`
+> `/model codex`
+> Run `/model` with no argument to open the model
+> selector.
+>
+> Config-file tab:
+> Set a default in `~/.config/devin/config.json` (on
+> Windows, `%APPDATA%\devin\config.json`):
+> `"agent": { "model": "swe-1-6-fast" }`"
+
+**No environment variables**, **no BYOK section**,
+**no `/config` interactive route** beyond the model
+selector, **no auth/credentials mechanism** beyond the
+slash commands `/login` and `/logout`. Confirmed by WebFetch
+agent's explicit tail: "No environment variables,
+BYOK, authentication, `/config` route, or `/model` route
+beyond what is quoted above are present on this page."
+
+#### `https://docs.devin.ai/cli/essential-commands` (direct-fetched 2026-07-03)
+
+Quoted verbatim — only env-var-adjacent text:
+
+> "`/login` Authenticate with Devin
+>  `/logout` Clear stored credentials and exit"
+
+— i.e. **auth is via `/login` slash command, not an env
+var**. The page does not reference `DEVIN_API_KEY`,
+`DEVIN_API_TOKEN`, or any token-via-environment mechanism.
+
+#### `https://docs.devin.ai/llms.txt` (direct-fetched 2026-07-03)
+
+The site's flat-text LLM-friendly index. Hasn't surfaced
+**any** path named `cli/configuration` or `cli/env-vars`
+or `cli/api-keys`. All CLI subpages point at **commands,**
+**models,** **extensibility,** and the **command reference**.
+No configuration reference exists at the URL surface
+`/docs.devin.ai/cli/configuration` — confirmed by a
+WebFetch that returned **HTTP 404**.
+
+#### `devin` source repo (`CognitionAI/devin-cli`)
+
+GitHub-side file-tree probe (`gh api repos/CognitionAI/
+devin-cli/git/trees/main?recursive=1`): only 4 files
+(`.github/...`, `README.md`, `scripts/...`). **No source.**
+
+Adapter-side, this means there's literally no upstream
+code-level audit surface — only the docs.
+
+### Implication for AO provider gateway (Bifrost)
+
+**Negative finding.** Devin ships:
+
+1. **No env knob** for provider base-URL.
+2. **No env knob** for API key override.
+3. **No env knob** for model override (only CLI flag
+   `--model` or config-file `agent.model`).
+4. **No public base-URL knob** anywhere in
+   `docs.devin.ai` (the docs page did not surface
+   one in any reachable URL).
+5. **Adapter is fully pass-through** — zero env-touches.
+
+The page mentions **"Adaptive"** as an internal
+router that "automatically selects the best model for
+each task" — i.e. the model-pick is delegated to
+Cognition's backend, **not** the user. There is no
+public docs surface to influence that router through
+env vars or CLI flags. (No evidence base exists for
+the WebSearch-shaped claim that the SDK env knobs
+`ANTHROPIC_BASE_URL`, `OPENAI_API_BASE`,
+`OPENROUTER_API_KEY` are inherited; no doc page lists
+these, and the binary is closed-source.)
+
+### Adapter changes needed for Bifrost
+
+**None.** The adapter is already correct. Modelling
+Devin's surface as a negative finding means a future
+"AO gateway configuration page" can list Devin as
+"provider-routing not yet supported" without forcing
+the adapter through a forked path.
+
+### Open questions surfaced
+
+- **`/docs.devin.ai/cli/configuration` is 404.** Some
+  user-facing config-file reference exists at
+  `~/.config/devin/config.json` (referenced from the
+  model page), but the closed-source binary may
+  support more fields than docs publish. To know for
+  sure would require running the binary locally with
+  `--help-all`-style introspection. Out of autonomous
+  loop.
+- **The Anthropic Claude Code compat layer** does not
+  imply that Devin reads `ANTHROPIC_*` — the devin.go
+  doc says *config* is imported (commands, subagents,
+  hooks), not SDK env knobs. Negative finding stands
+  unless binary introspection says otherwise.
+- **`DEVIN_API_KEY` for enterprise** is referenced
+  via `docs.devin.ai/api-reference/authentication.md`
+  (in `llms.txt`). That key authenticates to the
+  **Devin API** (`api.devin.ai`), not the CLI's
+  model traffic — i.e. it would not help route the
+  CLI's `--model <name>` calls through Bifrost.
 
 
 

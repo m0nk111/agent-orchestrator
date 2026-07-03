@@ -3,6 +3,96 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 16 — 2026-07-03 (Fase 2 Research: devin)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `devin` (Cognition
+  "Devin for Terminal", binary `devin`, upstream repo
+  `CognitionAI/devin-cli` — closed-source). Section appended
+  to `.docs/research/opencode-env-audit.md`.
+- Source citations (all direct-fetched or read on 2026-07-03):
+  - `backend/internal/adapters/agent/devin/devin.go:1-22` —
+    verbatim package doc: "Devin for Terminal (binary
+    'devin') is Cognition's terminal coding agent. It has a
+    documented Claude Code compatibility layer: it imports
+    `.claude/` configuration (commands, subagents, and
+    Claude Code lifecycle hooks)... This makes Devin a Tier
+    B (Claude-compat) adapter, mirroring the grok adapter."
+  - `devin.go:86-100` — launch argv shape
+    `devin [--permission-mode <mode>] -p <prompt>`.
+  - `devin.go:135-154` — restore argv shape
+    `devin [--permission-mode <mode>] -r <agentSessionId>`
+    (when hook-captured native id present).
+  - `devin.go:253-266` — permission mapping:
+    Default→no flag, AcceptEdits→`--permission-mode auto`,
+    Auto→`--permission-mode auto`,
+    BypassPermissions→`--permission-mode dangerous`.
+  - `devin.go:125-130` — hook install delegated directly to
+    `claudecode.Plugin` (`return (&claudecode.Plugin{}).GetAgentHooks(ctx, cfg)`);
+    Devin's own `config-importers/.../claude` +
+    `agent-ext/hooks/importers/claude` layers convert
+    Claude-compat hooks (SessionStart, UserPromptSubmit,
+    Stop, PermissionRequest, SessionEnd) on load
+    (verbatim `devin.go:111-124`).
+  - Recursive grep `os.Getenv\|os.LookupEnv` over `devin.go`
+    → **0 matches**. Only `os.UserHomeDir()` for
+    binary-path candidates at `devin.go:191,215` and
+    `os.Stat` at `devin.go:281-283`. Adapter is fully
+    pass-through.
+  - `gh api repos/CognitionAI/devin-cli/git/trees/main?recursive=1`
+    → only `.github/workflows/release-from-manifest.yml`,
+    `README.md` (one line: "Try Devin CLI: https://docs.devin.ai/cli"),
+    `scripts/release_from_manifest.py`. **No source; closed-source.**
+  - `https://docs.devin.ai/cli` — direct-fetched. Lists
+    install steps + 4 What's-next cards. **No env vars
+    named** (no `DEVIN_API_KEY`, `DEVIN_BASE_URL`,
+    `OPENAI_*`, `ANTHROPIC_*`).
+  - `https://docs.devin.ai/cli/models` — direct-fetched,
+    quoted verbatim. Model selection via CLI
+    `--model <short-name>` or `/model <short-name>` slash
+    command, or config-file
+    `~/.config/devin/config.json` field
+    `{"agent": {"model": "<short-name>"}}`. **No base-URL
+    knob, no env var, no BYOK section.** "Adaptive" is
+    an internal Cognition-side model-router, not
+    user-routable.
+  - `https://docs.devin.ai/cli/essential-commands` —
+    direct-fetched. Auth is via `/login` slash command.
+    **No `DEVIN_API_KEY` for CLI**; env-var surface empty.
+  - `https://docs.devin.ai/llms.txt` — direct-fetched,
+    scanned full index (truncated at 95 KB). **No
+    `cli/configuration` page exists** — WebFetch sees
+    HTTP 404 on `/cli/configuration`. Only
+    `api-reference/authentication.md` mentions env-var
+    tokens, and that's for `api.devin.ai` REST API
+    (not CLI model traffic).
+- **Verdict**: **negative finding, no clean Bifrost
+  route** for Devin in v1. Three reasons:
+  1. **Adapter is pass-through** — zero env-touches.
+  2. **CLI is closed-source** — no source-level
+     audit surface; only docs (which name no env vars).
+  3. **"Adaptive" is internal** — even at runtime,
+     the model is selected server-side by Cognition,
+     not by user-supplied env vars.
+- **Adapter changes needed**: **none.** Negative finding
+  is documented for the future
+  "AO-gateway-configuration page" to list Devin as
+  "provider-routing not yet supported".
+- Audit-internal flags (not Phase-2 blocking):
+  - `/docs.devin.ai/cli/configuration` is 404 — closed-
+    source binary may support more config-file fields
+    than docs publish; would need upstream binary
+    introspection to verify.
+  - The "Claude Code compat layer" adapts **config**
+    (commands, subagents, hooks), not **SDK env knobs**
+    (per the adapter's verbatim doc-comment) — so
+    `ANTHROPIC_BASE_URL` etc. **are not** inherited
+    by the Devin CLI.
+
+**Open audits queue (9)** — `droid`, `goose`, `grok`,
+`kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe`.
+
 ## Iteratie 15 — 2026-07-03 (Fase 2 Research: autohand)
 
 **Wat is geland**
