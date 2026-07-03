@@ -112,4 +112,26 @@ describe("defaultRunFilePath", () => {
 		expect(defaultRunFilePath("darwin", {}, "")).toBeNull();
 		expect(defaultRunFilePath("win32", {}, "")).toBeNull();
 	});
+
+	it("uses AO_HOME when neither AO_RUN_FILE nor a home lookup is set in stone", () => {
+		expect(defaultRunFilePath("linux", { AO_HOME: "/srv/ao" }, "/home/me")).toBe("/srv/ao/running.json");
+	});
+
+	it("keeps AO_RUN_FILE winning over AO_HOME", () => {
+		expect(
+			defaultRunFilePath(
+				"linux",
+				{ AO_RUN_FILE: "/tmp/ao-explicit-run.json", AO_HOME: "/srv/ao" },
+				"/home/me",
+			),
+		).toBe("/tmp/ao-explicit-run.json");
+	});
+
+	it("treats empty AO_HOME as unset", () => {
+		expect(defaultRunFilePath("linux", { AO_HOME: "" }, "/home/me")).toBe("/home/me/.ao/running.json");
+	});
+
+	it("treats empty AO_RUN_FILE as unset", () => {
+		expect(defaultRunFilePath("linux", { AO_RUN_FILE: "" }, "/home/me")).toBe("/home/me/.ao/running.json");
+	});
 });

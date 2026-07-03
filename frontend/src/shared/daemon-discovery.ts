@@ -103,13 +103,24 @@ export function parseRunFile(contents: string): RunFileInfo | null {
  * backend/internal/config's canonical AO home default so the supervisor reads
  * the same file the daemon writes. Returns null when the user home directory
  * cannot be resolved.
+ *
+ * Precedence mirrors the Go side:
+ *   AO_RUN_FILE     -> exact path the caller pinned (narrowest override)
+ *   AO_HOME         -> additive single-root override; running.json lives under it
+ *   $HOME/.ao       -> unchanged default for anyone not setting either var
+ * Empty-string AO_HOME / AO_RUN_FILE is treated as unset, consistent with the
+ * Go AO_* reading pattern.
  */
 export function defaultRunFilePath(
 	platform: NodeJS.Platform,
-	_env: Record<string, string | undefined>,
+	env: Record<string, string | undefined>,
 	homeDir: string,
 ): string | null {
 	void platform;
+	const explicit = env.AO_RUN_FILE;
+	if (explicit && explicit !== "") return explicit;
+	const aoHome = env.AO_HOME;
+	if (aoHome && aoHome !== "") return joinPath(aoHome, "running.json");
 	if (!homeDir) return null;
 	return joinPath(homeDir, ".ao", "running.json");
 }
