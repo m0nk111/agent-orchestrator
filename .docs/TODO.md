@@ -24,7 +24,7 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [x] Treat empty-string `AO_HOME` as unset (consistent with how `AO_PORT` etc. already handle empty values) — same commit; `TestLoadAOHome/empty_AO_HOME_is_treated_as_unset` PASS (`os.LookupEnv + raw != ""`).
 - [x] Update `Load()`'s doc comment (recognized env var list) to include `AO_HOME` — same commit; doc comment lines updated.
 - [x] Confirm `AO_DATA_DIR` / `AO_RUN_FILE` still win when explicitly set, over `AO_HOME` — same commit; `TestLoadAOHome/AO_RUN_FILE_keeps_winning_over_AO_HOME` PASS, `..._AO_DATA_DIR_keeps_winning_over_AO_HOME` PASS.
-- [ ] `backend/internal/adapters/runtime/conpty/ptyregistry/registry.go`: stop duplicating home-dir resolution in `registryFile()`; respect `AO_HOME`
+- [x] `backend/internal/adapters/runtime/conpty/ptyregistry/registry.go`: stop duplicating home-dir resolution in `registryFile()`; respect `AO_HOME` — feat(ptyregistry) 137c3052; gate `go test -race ./...` PASS (all packages green).
 - [ ] Decide: does AO create `AO_HOME` if it doesn't exist yet, or error? (mirror existing `MkdirAll` behavior used elsewhere, e.g. `runfile.Write`) — BLOCKED: explicit user decision needed in DECISIONS.md; cannot proceed until that's settled (RFC 001 silent).
 - [ ] Windows path handling: verify `AO_HOME` with drive letters / backslashes resolves correctly in `filepath.Join` calls
 
