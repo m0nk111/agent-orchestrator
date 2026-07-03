@@ -907,4 +907,272 @@ required today.
   here so future agents do not re-derive it.
 
 
+## `crush` (Charmbracelet Crush, binary `crush`, npm `@charmland/crush`)
+
+Source adapter:
+`backend/internal/adapters/agent/crush/crush.go` (245 lines,
+package `crush`, adapter ID `"crush"`).
+
+### Adapter self-description (verbatim from source)
+
+> "Package crush implements the Crush agent adapter: launching new sessions,
+> resuming sessions by native ID, and reading session info.
+>
+> Crush differs from other agents in that it doesn't have full hooks support,
+> so GetAgentHooks and SessionInfo are no-ops for now. Session tracking is
+> done through basic session ID management only."
+> — `crush.go:1-7`
+
+A note that matters for Bifrost: **no native hooks** means AO does not
+derive native session identity from `.crush/logs/...` style files, it
+relies on the `--session <id>` round-trip. Fine for AO's session model,
+but worth flagging as a design constraint.
+
+Launch argv:
+
+```
+crush [--cwd <WorkspacePath>] [--yolo] [-- <Prompt>]
+```
+
+Restore argv:
+
+```
+crush [--cwd <WorkspacePath>] [--yolo] --session <agentSessionId>
+```
+
+Permission flag mapping (per `crush.go:93-95`):
+
+| AgentOps permission | Crush flag |
+|---|---|
+| `Default`           | *(no flag)* |
+| `AcceptEdits`       | *(no flag)* |
+| `BypassPermissions` | `--yolo`    |
+| `Auto`              | *(no flag; closest is `--yolo` AO maps to bypass, not auto)* |
+
+No native system-prompt flag — `cfg.SystemPrompt` / `cfg.SystemPromptFile`
+are intentionally ignored (verified at `crush.go:65-71`). Initial prompt
+is a positional argument after `--`.
+
+### Env-var surface — adapter itself
+
+The adapter touches **exactly one** environment variable, and it's only
+for Windows binary resolution:
+
+- `APPDATA` — at `crush.go:177` for the Windows PATH-resolution
+  fallback (`%APPDATA%/npm/crush.cmd` etc.). This is the same
+  one-env-touch pass-through pattern as `continueagent` and `cline`.
+
+No other env reads/writes inside the adapter source.
+
+### Env-var surface — Crush CLI proper
+
+Primary source for the upstream is
+[`charmbracelet/crush`](https://github.com/charmbracelet/crush). Verified
+paths:
+
+- `README.md` — top-of-file summary: *"Multi-Model: choose from a wide
+  range of LLMs or add your own via OpenAI- or Anthropic-compatible
+  APIs"* (line ~16). Install: `brew install charmbracelet/tap/crush`,
+  `npm install -g @charmland/crush`, plus Winget / Scoop / Nix / etc.
+- `internal/cmd/root.go` lines 54-61 — confirmed CLI flag set:
+
+  | Flag          | Short | Purpose                                         |
+  |---------------|-------|-------------------------------------------------|
+  | `--cwd`       | `-c`  | current working directory                       |
+  | `--data-dir`  | `-D`  | custom crush data directory (separate from cwd) |
+  | `--debug`     | `-d`  | debug logging                                   |
+  | `--host`      | `-H`  | client/server host (advanced)                   |
+  | `--yolo`      | `-y`  | accept all permissions (dangerous mode)         |
+  | `--session`   | `-s`  | continue a session by ID                        |
+  | `--continue`  | `-C`  | continue most recent session                    |
+  | `--help`      | `-h`  | help                                            |
+
+  AO's adapter uses `--cwd`, `--yolo`, `--session`; the others
+  are AO-irrelevant.
+
+- `internal/env/env.go` — `os.Getenv` wrapper. No provider-related
+  base-URL knobs found in this file.
+- `internal/config/provider.go`, `internal/config/load.go` — config
+  resolution layer.
+
+#### Per-provider API-key env vars (from README, exact)
+
+Crush supports 25 direct provider env-var aliases for an API key
+(verbatim from the README env-table):
+
+```
+HYPER_API_KEY              → Charm Hyper
+ANTHROPIC_API_KEY          → Anthropic
+OPENAI_API_KEY             → OpenAI
+VERCEL_API_KEY             → Vercel AI Gateway
+GEMINI_API_KEY             → Google Gemini
+SYNTHETIC_API_KEY          → Synthetic
+ZAI_API_KEY                → Z.ai
+MINIMAX_API_KEY            → MiniMax
+HF_TOKEN                   → Hugging Face Inference
+CEREBRAS_API_KEY           → Cerebras
+OPENROUTER_API_KEY         → OpenRouter
+IONET_API_KEY              → io.net
+ALIBABA_SINGAPORE_API_KEY  → Alibaba (Singapore)
+GROQ_API_KEY               → Groq
+AVIAN_API_KEY              → Avian
+OPENCODE_API_KEY           → OpenCode Zen & Go
+VERTEXAI_PROJECT           → Google Cloud VertexAI (Gemini)
+VERTEXAI_LOCATION          → Google Cloud VertexAI (Gemini)
+AWS_ACCESS_KEY_ID          → Amazon Bedrock (Claude)
+AWS_SECRET_ACCESS_KEY      → Amazon Bedrock (Claude)
+AWS_REGION                 → Amazon Bedrock (Claude)
+AWS_PROFILE                → Amazon Bedrock (Custom Profile)
+AWS_BEARER_TOKEN_BEDROCK   → Amazon Bedrock
+AZURE_OPENAI_API_ENDPOINT  → Azure OpenAI models
+AZURE_OPENAI_API_KEY       → Azure OpenAI models (optional w/ Entra ID)
+AZURE_OPENAI_API_VERSION   → Azure OpenAI models
+```
+
+That's the index of *direct* `API_KEY` style env hooks.
+
+#### The `CRUSH_<VAR>` re-prefix layer (CRITICAL for Bifrost)
+
+Direct-fetch of `internal/config/load.go` lines 168-193 confirms a
+**brilliant pattern**:
+
+```go
+// PushPopCrushEnv scans the environment for any CRUSH_-prefixed
+// variables, and during config resolution lifts them into the
+// underlying provider env namespace. At function exit the original
+// values are restored.
+func PushPopCrushEnv() func() {
+    found := []string{}
+    for _, ev := range os.Environ() {
+        if strings.HasPrefix(ev, "CRUSH_") { … }
+    }
+    backups := make(map[string]string)
+    for _, ev := range found {
+        backups[ev] = os.Getenv(ev)
+    }
+    for _, ev := range found {
+        os.Setenv(ev, os.Getenv("CRUSH_"+ev))
+    }
+    restore := func() { … }
+    return restore
+}
+```
+
+…and `configureProviders` (line 198) does
+`restore := PushPopCrushEnv(); defer restore()` so the lift runs on
+every config-load / refresh.
+
+**Translation for Bifrost**, courtesy of this layer:
+
+- Setting `CRUSH_OPENAI_API_KEY=...` (in the **crush process's own**
+  environment, i.e. via `cfg.Env` at spawn time) lifts it to
+  `OPENAI_API_KEY` for the duration of provider resolution, then
+  restores the user's original `OPENAI_API_KEY`.
+- Same for `CRUSH_ANTHROPIC_API_KEY`, `CRUSH_GROQ_API_KEY`, etc.
+- This is **purpose-built for routing hooks like Bifrost** and is
+  comparable in spirit to `CONTINUE_GLOBAL_DIR` for continueagent.
+
+#### The single live `BASE_URL` env exception: `HYPER_URL`
+
+Direct-fetch of `internal/agent/hyper/provider.go` confirms:
+
+```go
+// BaseURL returns the base URL, which is either $HYPER_URL or the default.
+var BaseURL = sync.OnceValue(func() string {
+    return cmp.Or(os.Getenv("HYPER_URL"), defaultBaseURL)
+})
+```
+
+This is **only** for the Charm-Hyper (orchestration) provider. None of
+the other 25+ providers expose a `*_BASE_URL` analogue in the upstream
+source — the `crush.json` `base_url` field is the only override on the
+config-file side.
+
+#### Config-file layers (crush order, from README)
+
+```
+1. .crush.json                          (project-local)
+2. crush.json                           (project-local)
+3. $CRUSH_GLOBAL_CONFIG/crush.json      (user-global, env-overridden)
+   (default: $HOME/.config/crush/crush.json)
+```
+
+`base_url` and `api_key` for any provider live in the JSON, and they
+**expand shell-style** (`$VAR`, `${VAR:-default}`, `$(command)`,
+`${VAR:?error}` per README §"MCPs" / §"Security note"). That means
+**the per-provider base URL can be supplied via environment by stuffing
+`"base_url": "$AO_BIFROST_BASE"`** into the AO-managed provider entry,
+no separate `*_BASE_URL` env var needed.
+
+### Negative findings (audit-relevant)
+
+- **No global `CRUSH_API_BASE`** (or any provider-wide base-URL env
+  knob other than the `HYPER_URL` exception). The pattern is
+  per-provider in `crush.json`, with shell-expansion. Practical for
+  Bifrost but slightly more elaborate than a single-env-var.
+- **`OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` style env vars are not
+  honoured by Crush itself.** The user has to put the URL in
+  `crush.json` (or `CRUSH_<PROVIDER>_BASE_URL` could be aliased via
+  config-file shell expansion, but there's no first-class hook).
+
+### Implication for AO provider gateway
+
+Crush is the **third clean Bifrost route in the audit** (after
+claude-code and continueagent) and the **first to expose a literal
+in-process env-rewrite** for credentials — `PushPopCrushEnv()`.
+Practical AO-side strategy:
+
+1. **Provider choice**: pick ONE provider whose protocol Bifrost
+   speaks (Bifrost has been OpenAI-compat so far in discussions —
+   verify in RFC 002). Set `CRUSH_OPENAI_API_KEY=<bifrost-token>`
+   in `cfg.Env` at spawn time. PushPopCrushEnv lifts it transiently
+   to `OPENAI_API_KEY`.
+2. **Base URL override**: write a tiny entry into the user's
+   `crush.json` (project-layer if AO uses a per-project write, or
+   user-layer `~/.config/crush/crush.json` if AO overrides globally).
+   Example shape:
+   ```json
+   {
+     "providers": {
+       "openai": {
+         "id": "openai",
+         "type": "openai",
+         "base_url": "${AO_BIFROST_BASE:-http://127.0.0.1:<bifrost-port>/v1}",
+         "api_key": "$AO_BIFROST_TOKEN",
+         "models": [{ "id": "...", "name": "..." }]
+       }
+     }
+   }
+   ```
+3. **No adapter changes needed**: the AO crush adapter is already
+   one-env-touch pass-through (`APPDATA` only). config-env injection
+   happens via `cfg.Env` at spawn, not in the adapter itself.
+
+### Adapter changes needed for Bifrost
+
+**None.** Adapter is already a clean pass-through. If Bifrost
+needs to inject `CRUSH_OPENAI_API_KEY`, `AO_BIFROST_BASE`,
+`AO_BIFROST_TOKEN` into the crush-process env, the spawn context's
+`cfg.Env` map is the right place; AO does not need to edit
+`crush.go` for Bifrost to work end-to-end.
+
+### Open questions surfaced
+
+- **Where the Bifrost entry lives in crush.json**: project-layer
+  `.crush.json` (if AO wants a per-project Bifrost override) or
+  user-layer `~/.config/crush/crush.json` (one global override).
+  Mirror of the same codex/continueagent preserve-vs-rewrite
+  shape. Decision flagged, not made.
+- **Exact env-var the adapter should export**: `CRUSH_OPENAI_API_KEY`
+  for the token, `AO_BIFROST_BASE` for the base URL (via JSON
+  shell-expansion, since Crush has no `_BASE_URL` env hook for
+  non-Hyper providers). The names are AO's to choose; not invented
+  here.
+- **`CRUSH_GLOBAL_CONFIG` / `CRUSH_GLOBAL_DATA` env overrides**
+  exist and would let AO redirect Crush's data dir to under
+  `AO_HOME`. Worth flagging as a candidate AO_HOME-friendly hook
+  if Phase 1 hasn't yet made Crush migrate its `$HOME/.local/share/crush`
+  to AO-managed paths naturally; but that's an XOR-followup, not
+  Bifrost-shape.
+
 
