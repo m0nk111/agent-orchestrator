@@ -17,7 +17,8 @@ endpoint without per-adapter code branching.
 - [x] `claude-code` — done in next section.
 - [x] `codex` — done further down.
 - [x] `aider` — done further down still.
-- [ ] `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
+- [x] `cline` — done in this file's "cline" section.
+- [ ] `amp`, `auggie`, `autohand`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
 
 ## `opencode` (sst/opencode)
 
@@ -380,5 +381,105 @@ list-the-key, which is the common case.
   plus `OPENAI_API_BASE`, or (b) wait for aider's Anthropic
   integration to expose a base URL knob. Not invented here;
   flagged for the Bifrost design discussion.
+
+---
+
+## `cline` (Cline Bot Inc., formerly "Claude Dev")
+
+Source: `backend/internal/adapters/agent/cline/cline.go`. Grep for
+`CLINE_|ANTHROPIC_|OPENAI_API|OPENAI_BASE|os.Setenv|os.Getenv|
+Getenv\(|env` returned **only one match**: `os.Getenv("APPDATA")`
+at line 167 (Windows-only shell-tool path resolution). The AO
+`cline` adapter is otherwise pure pass-through — it does not
+override or inject provider env vars itself.
+
+What cline itself reads for **provider routing**, per the official
+docs + Cline CLI README (verified 2026-07-02):
+
+Cline has multiple surfaces that share an agent core but differ
+in where config lives:
+
+| Surface           | How the user configures provider                              |
+|-------------------|---------------------------------------------------------------|
+| VS Code ext.      | Settings-UI fields (`API Provider` dropdown, `API Key`, `Model`, optional `Base URL`). |
+| JetBrains plugin  | Same Settings-UI shape as VS Code.                            |
+| `cline` CLI       | CLI flags (`-P/--provider`, `-m/--model`, `-k/--key`, `--baseurl`, plus `cline auth --... --apikey --modelid --baseurl`). |
+| Cline OAuth       | OAuth sign-in (no API key) — base URL is then locked to Cline's gateway, not Bifrost's. |
+| Claude Code path  | Hands off to the `claude` CLI (subprocess), which honours `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` itself. |
+
+Cline supports many providers: Anthropic, OpenAI, Google Gemini,
+OpenRouter, AWS Bedrock, GCP Vertex, Cerebras, Groq, Ollama,
+LM Studio, any OpenAI-compatible endpoint, plus the curated
+"Cline (usage-billing)" + "ClinePass" tiers.
+
+Source URLs:
+
+- <https://docs.cline.bot/getting-started/authorizing-with-cline> —
+  the three auth paths (Cline usage-billing, ClinePass, BYOK),
+  provider list, and `--provider=user-key` per-cloud-provider
+  dropdown.
+- <https://docs.cline.bot/provider-config/anthropic> — BYOK
+  Anthropic path; key in UI; **"Custom Base URL"** checkbox for
+  proxy/gateway overrides. Notes the Claude-Code-subscription
+  path picks up `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`
+  from the spawned `claude` subprocess.
+- <https://docs.cline.bot/provider-config/openai> — BYOK OpenAI
+  path; key + optional **"Base URL"** field for proxy/gateway
+  overrides.
+- <https://github.com/cline/cline/blob/main/apps/cli/README.md> —
+  CLI runbook. The exact shapes that matter for env-driven
+  automation:
+
+```
+cline auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
+cline auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl https://api.example.com/v1
+cline -P openrouter -m google/gemini-3-pro -k sk-... "Set up a storybook"
+cline -m anthropic/claude-opus-4-6 "Explain string theory"
+```
+
+The CLI is a Go-Rust binary (`cline` npm package resolves the
+correct platform binary via optional dependencies), so it's the
+one shape where the AO side can land config from env-vars in the
+spawned process without a UI round-trip.
+
+### Implication for AO provider gateway
+
+Two viable routes depending on which surface AO controls:
+
+1. **CLI form** (the shape AO spawns today): pass provider/model
+   + base URL + key via `cline auth --provider X --apikey
+   <bifrost> --modelid <id> --baseurl <bifrost>` during setup,
+   then plain `cline "..."` in session env. The auth-step is
+   per-project once; the base URL persists in cline's saved auth
+   config (location TBD by cline, but `--config <path>` lets
+   AO pin it under `$AO_HOME/cline/<proj>`).
+2. **Claude-Code subscription path** in cline: don't override a
+   base-URL knob on cline itself; instead set
+   `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` in the
+   environment of the `claude` subprocess that cline spawns.
+   Same plumbing as the standalone `claudecode` adapter — no
+   extra layer.
+
+For the byok-OpenAI-compat path (the gateway route), the CLI's
+`--baseurl` flag on `cline auth --provider openai-native` is the
+hook. For Anthropic direct, the Cline BYOK flow accepts the same
+flag.
+
+### Open question surfaced
+
+- **Where cline stores its auth config** when given `--baseurl`
+  + `--apikey` via `cline auth`. The CLI README references a
+  `--config <path>` flag for "CLI home resolution", suggesting a
+  YAML/JSON file lives there. If AO pins `--config
+  $AO_HOME/cline/<project>/config`, Bifrost-base-URL can be
+  re-set per-project cleanly, but the exact file format and
+  merge semantics are not in the docs audited here — follow-up
+  needed before scaffolding the `internal/providers/`
+  sidecar-to-cline glue. Not invented here.
+- **OAuth-managed providers (`cline`, `openai-codex`, `oca`)**
+  bypass AO's Bifrost by design (no key on the wire). If a
+  project uses one of these AO has no gateway knob. That's a
+  deliberate trade-off — flagging so it's not a surprise in
+  Phase 2 doctor output.
 
 

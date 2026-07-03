@@ -3,6 +3,80 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 7 — 2026-07-03 (Fase 2 Research: cline)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — fifth slice, `cline` audit, with
+  verified source.** Picked over `copilot` because cline
+  exposes a clear canonical gateway knob (CLI `--baseurl` on
+  `cline auth`), whereas copilot is GitHub-OAuth-bound.
+- Key context surfaced: cline is **multi-surface** (VS Code
+  ext., JetBrains plugin, `cline` Go/Rust CLI binary, plus
+  Claude-Code-subscription hand-off). All surfaces share the
+  same provider list (Anthropic, OpenAI, Gemini, OpenRouter,
+  AWS Bedrock, GCP Vertex, Cerebras, Groq, Ollama, LM Studio,
+  any OpenAI-compatible endpoint), but config-knob placement
+  varies.
+- Authoritative sources verified live (2026-07-02):
+  - <https://docs.cline.bot/getting-started/authorizing-with-cline> —
+    three auth paths (Cline usage-billing, ClinePass, BYOK),
+    provider list, CLI auth flow.
+  - <https://docs.cline.bot/provider-config/anthropic> — BYOK
+    Anthropic: key in UI; **"Custom Base URL" checkbox** for
+    proxy/gateway overrides.
+  - <https://docs.cline.bot/provider-config/openai> — same shape:
+    BYOK OpenAI + optional "Base URL" UI field for proxy/gateway.
+  - <https://github.com/cline/blob/main/apps/cli/README.md> (raw,
+    fetched 2026-07-02) — the exact CLI runbook with the four
+    command shapes:
+    ```
+    cline auth --provider anthropic \
+      --apikey sk-... --modelid claude-sonnet-4-6
+    cline auth --provider openai-native \
+      --apikey sk-... --modelid gpt-5 \
+      --baseurl https://api.example.com/v1
+    cline -P openrouter -m google/gemini-3-pro -k sk-...
+    cline -m anthropic/claude-opus-4-6
+    ```
+- Grep of `backend/internal/adapters/agent/cline/cline.go` for
+  `CLINE_|ANTHROPIC_|OPENAI_API|OPENAI_BASE|os.Setenv|os.Getenv|
+  Getenv\(|env`: only the Windows-only `APPDATA` lookup (line
+  167) for shell-tool path resolution matches. Pure pass-through.
+- Two viable AO integration routes documented:
+  1. **CLI form**: `--baseurl` on `cline auth --provider X`, then
+     plain `cline "..."` in session env. `--config <path>` flag
+     lets AO pin auth storage under `$AO_HOME/cline/<project>/`.
+  2. **Claude-Code-subscription hand-off**: the spawned `claude`
+     binary reads `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`
+     itself — same plumbing as the standalone `claudecode`
+     adapter, no extra layer.
+- Open questions surfaced (audit footer): where cline stores
+  auth config when given `--baseurl`+`--apikey`, and that OAuth
+  providers (`cline`, `openai-codex`, `oca`) deliberately
+  bypass AO's gateway (no key on the wire) — flagged so it
+  isn't a surprise in Phase 2 doctor output. Neither invented
+  here.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- 18 remaining adapters same as before. None blocked by
+  user-decisions.
+- Same open questions A/B/C from DECISIONS.md remain pending.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. `copilot` next (well-known, but mostly OAuth-tied; expected
+   to surface a different shape — GitHub-CLI Auth-bound rather
+   than env-var-bound).
+2. Then `cursor` (similar profile; commercial product with
+   bundled-provider model).
+3. `continueagent` after that (open-source, full provider
+   surface — likely the most knobs of any remaining).
+4. The lesser-known batch (`agy`, `vibe`, `kimi`, `kiro`, `pi`,
+   `qwen`, `grok`, `autohand`, `auggie`, `amp`) deferred until
+   the established CLIs are mapped.
+
 ## Iteratie 6 — 2026-07-03 (Fase 2 Research: aider)
 
 **Wat is geland**
