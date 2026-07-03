@@ -23,15 +23,28 @@ type Entry struct {
 // pidalive_windows.go).
 var pidAlive = defaultPidAlive
 
-// registryFile resolves ~/.ao/windows-pty-hosts.json. Uses os.UserHomeDir()
-// so t.Setenv("HOME", dir) in tests redirects reads/writes to a temp dir.
-// ponytail: HOME-based resolution; no AO_DATA_DIR override needed here.
-func registryFile() (string, error) {
+// aoHomeDir returns the canonical AO root directory honouring AO_HOME first and
+// falling back to $HOME/.ao. Empty AO_HOME is treated as unset, matching the
+// surrounding AO_* reading pattern.
+func aoHomeDir() (string, error) {
+	if raw, ok := os.LookupEnv("AO_HOME"); ok && raw != "" {
+		return raw, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".ao", "windows-pty-hosts.json"), nil
+	return filepath.Join(home, ".ao"), nil
+}
+
+// registryFile resolves the Windows pty-hosts registry path under the AO home.
+// The priority is AO_HOME -> $HOME/.ao; per-test isolation uses HOME.
+func registryFile() (string, error) {
+	root, err := aoHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "windows-pty-hosts.json"), nil
 }
 
 // readRaw reads and defensively parses the registry. Missing file or malformed

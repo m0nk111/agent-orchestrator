@@ -17,10 +17,13 @@ func withFakePidAlive(t *testing.T, fn func(pid int) bool) {
 }
 
 // setupHome points HOME at a temp dir and returns the expected registry path.
+// Also clears AO_HOME so the test observes pure HOME-based resolution unless a
+// case sets AO_HOME explicitly afterwards.
 func setupHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("AO_HOME", "")
 	return dir + "/.ao/windows-pty-hosts.json"
 }
 
@@ -225,5 +228,50 @@ func TestAtomicWriteProducesValidJSON(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].PtyHostPID != 99 {
 		t.Fatalf("unexpected entries: %v", entries)
+	}
+}
+
+func TestRegistryFileAOHome(t *testing.T) {
+	tests := []struct {
+		name    string
+		homeDir string
+		aoHome  string
+		want    string
+	}{
+		{
+			name:    "AO_HOME alone relocates the registry",
+			homeDir: "/tmp/ao-home-irrelevant",
+			aoHome:  "/srv/ao",
+			want:    filepath.Join("/srv/ao", "windows-pty-hosts.json"),
+		},
+		{
+			name:    "empty AO_HOME falls back to $HOME/.ao",
+			homeDir: "/tmp/ao-home-h",
+			aoHome:  "",
+			want:    filepath.Join("/tmp/ao-home-h", ".ao", "windows-pty-hosts.json"),
+		},
+		{
+			name:    "AO_HOME wins over HOME",
+			homeDir: "/tmp/ao-home-home",
+			aoHome:  "/var/lib/ao",
+			want:    filepath.Join("/var/lib/ao", "windows-pty-hosts.json"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", tc.homeDir)
+			if tc.aoHome == "" {
+				t.Setenv("AO_HOME", "")
+			} else {
+				t.Setenv("AO_HOME", tc.aoHome)
+			}
+			got, err := registryFile()
+			if err != nil {
+				t.Fatalf("registryFile: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("registryFile() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
