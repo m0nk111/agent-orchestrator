@@ -46,6 +46,7 @@ import { shouldReplacePortHolder } from "./shared/daemon-takeover";
 import { buildDaemonEnv, resolveShellEnv, type ShellRunner } from "./shared/shell-env";
 import { DEFAULT_POSTHOG_HOST, DEFAULT_POSTHOG_PROJECT_KEY } from "./shared/posthog-config";
 import { buildTelemetryBootstrap } from "./shared/telemetry";
+import { resolveUserDataParent } from "./shared/user-data";
 import { createBrowserViewHost, type BrowserViewHost } from "./main/browser-view-host";
 import { connectSupervisor, type SupervisorLinkHandle } from "./main/supervisor-link";
 import { shouldLinkOnAttach } from "./main/daemon-owner";
@@ -71,12 +72,14 @@ process.stderr.on("error", ignoreStdStreamError);
 app.setName("Agent Orchestrator");
 
 // Pin ALL Electron-owned state (Chromium cache, cookies, local/session storage,
-// crash dumps) under the canonical AO home at ~/.ao instead of Electron's macOS
-// default ~/Library/Application Support/<name>. Keeps the app's entire footprint
-// inside ~/.ao alongside the daemon's data dir and running.json. sessionData and
-// crashDumps derive from userData, so this one override reparents them all.
-// Must run before app ready.
-app.setPath("userData", path.join(os.homedir(), ".ao", "electron"));
+// crash dumps) under the canonical AO home at $AO_HOME/.ao/electron (or
+// ~/.ao/electron when AO_HOME is unset) instead of Electron's macOS default
+// ~/Library/Application Support/<name>. Keeps the app's entire footprint
+// inside the AO home alongside the daemon's data dir and running.json.
+// sessionData and crashDumps derive from userData, so this one override
+// reparents them all. Must run before app ready. The helper is unit-tested
+// in ./shared/user-data so this line stays a thin wiring point.
+app.setPath("userData", resolveUserDataParent(process.env, os.homedir()));
 
 let mainWindow: BrowserWindow | null = null;
 let daemonProcess: ChildProcessWithoutNullStreams | null = null;
