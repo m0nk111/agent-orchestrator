@@ -581,4 +581,139 @@ Possible workarounds, each with caveats:
   `copilot` as a router-aware provider or demote it to
   "explicit-mode only" is a UX policy decision. Flagged.
 
+---
+
+## `continueagent` (Continuedev CLI, binary `cn`, npm `@continuedev/cli`)
+
+Source: `backend/internal/adapters/agent/continueagent/continueagent.go`.
+Adapter ID is `"continue"` (Go package named `continueagent` because
+`continue` is a Go reserved keyword). Grep for `os.Setenv|os.Getenv`
+returned **one match**: `os.Getenv("APPDATA")` at line 187
+(Windows-only shell-tool path resolution — pass-through).
+No provider env vars set.
+
+> Note on the adapter's link to the Claude Code hook path:
+> `continueagent.go:8-15` documents that the Continue CLI natively
+> reads Claude Code hook settings (`.claude/settings.json` /
+> `.claude/settings.local.json`) and dispatches Claude-format hook
+> events. AO reuses the `claudecode` hook installer and routes
+> through the existing `ao hooks claude-code <evt>` dispatcher. This
+> is the reason the adapter can be a pass-through on env vars: the
+> hook-side configuration is fully owned by `claudecode`. Confirmed
+> by reading the adapter header + `GetAgentHooks` (line 117-122).
+
+What Continue's `cn` CLI itself reads, per Continue's own CLI docs
+plus the `@continuedev/cli` source tree on `main` (verified
+2026-07-02):
+
+| Variable | Purpose | Source |
+| -------- | ------- | ------ |
+| `CONTINUE_GLOBAL_DIR` | Override the Continue global home (normally `~/.continue` on Mac/Linux, `%USERPROFILE%\.continue` on Windows). Read in `extensions/cli/src/env.ts`. | <https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/src/env.ts> |
+| `CONTINUE_API_BASE` | Override the **Continue Hub** API base URL. Default: `https://api.continue.dev/`. This only affects the Hub traffic (agent publishing/fetching) the CLI uses; it does NOT affect per-model API traffic. Read in the same `env.ts`. | same as above |
+| `dotenv` (no env var) | At startup `env.ts` calls `dotenv.config()` so a `.env` in cwd is loaded; this is not an env-var discovery mechanism but it does mean any of the upstream env vars Continue detects are also pullable via godotenv-loaded files. | <https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/src/env.ts> |
+| `OPENAI_API_BASE` (and other upstream provider envs) for inner model adapters | NOT supplied by Continue — model traffic goes via `apiBase` in `config.yaml` at the per-model level (see below). | <https://docs.continue.dev/reference#models> |
+
+Source URLs (all fetched 2026-07-02):
+
+- <https://docs.continue.dev/guides/cli> — confirms CLI binary is `cn`,
+  install is `curl … | bash`, config is `config.yaml` (same shape as
+  the Continue IDE extension), `--config <path>` flag for selecting a
+  config, verbose logs go to `~/.continue/logs/cn.log`, per-session
+  permissions land in `~/.continue/permissions.yaml`.
+- <https://docs.continue.dev/reference> — pinned the per-model schema.
+  Models live under `models:` (each model has `provider`, `model`,
+  `apiBase`, `apiKey`, `requestOptions`, `roles`, etc.). Critically:
+  > `apiBase` — Can be used to override the default API base that is specified per model.
+  Plus the form `- uses: anthropic/claude-sonnet-4-6` with `with:` block
+  for `${{ secrets.ANTHROPIC_API_KEY }}` and an `override:` block for
+  `defaultCompletionOptions`. **This is the cleanest gateway knob among
+  every adapter audited so far** — `apiBase` is a first-class field on
+  every model entry.
+- <https://docs.continue.dev/reference/yaml-migration> — defines the
+  Continue Global Directory as `~/.continue` (Mac/Linux), with
+  `%USERPROFILE%\.continue` on Windows.
+- <https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/src/env.ts>
+  — direct fetch of `env.ts`. Confirms `CONTINUE_API_BASE` and
+  `CONTINUE_GLOBAL_DIR` are the only two `process.env.*` lookups
+  in the CLI's environment bootstrap. (Greppable: `process.env.`).
+- <https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/src/auth/authEnv.ts>
+  — direct fetch. Auth state lives at
+  `path.join(env.continueHome, "auth.json")`, populated
+  interactively via `/login` slash command.
+- <https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/scripts/install.sh>
+  — direct fetch (truncated). Header confirms `PACKAGE_NAME="@continuedev/cli"`,
+  `CLI_COMMAND="cn"`, `REQUIRED_NODE_VERSION="20.20.1"`, install via
+  fnm. (Full installer logic was truncated by the fetcher; the
+  package name + binary name + required Node version are the
+  authoritative install-shaped facts the audit needs.)
+
+### Negative findings (audit-relevant)
+
+- **No `OPENAI_BASE_URL` analogue per provider**: Continue does not
+  honor `OPENAI_API_BASE` / `ANTHROPIC_BASE_URL` / etc. directly from
+  environment for the per-model traffic. The replacement is the
+  per-model `apiBase:` in `config.yaml`. So AO cannot inject a base
+  URL via env-vars only — it has to write `~/.continue/config.yaml`.
+- **Auth tokens come from config**: `auth.json` is the side-channel
+  for `/login`-populated tokens. `config.yaml` is the source of
+  truth for static `apiKey` (resolved via `${{ secrets.NAME }}`).
+  There is no `CONTINUE_API_KEY` style env var that AO can set.
+
+### Implication for AO provider gateway
+
+**Continue is a clean Bifrost-routed provider.** Recommendation:
+
+1. **Per-model gateway routing**: AO writes
+   `~/.continue/config.yaml` with one model entry (the project's
+   selected model/provider), setting:
+   ```yaml
+   name: Bifrost
+   version: 1.0.0
+   schema: v1
+   models:
+     - name: <project's chosen model>
+       provider: openai   # Bifrost exposes OpenAI-compat
+       model: <id>
+       apiBase: http://127.0.0.1:<bifrost-port>/v1
+       apiKey: ${{ secrets.AO_BIFROST_TOKEN }}
+       roles: [chat, edit, apply, summarize]
+   ```
+   This routes every Continue session through Bifrost for that
+   project's selection.
+2. **`CONTINUE_API_BASE` for hub traffic**: less interesting — the
+   Hub API only matters for `/login`, agent publish/fetch from
+   Continue's marketplace. Continue CLI can be used without the
+   Hub entirely; setting/updating `CONTINUE_API_BASE` is a Phase-3
+   "shared modules" concern, not a Phase-2 provider decision.
+3. **Auth + secrets resolution**: `config.yaml` supports
+   `${{ secrets.X }}` placeholders (verified by direct reading of the
+   reference example). AO can populate secrets either by writing
+   them inline (e.g. `ANTHROPIC_API_KEY: <literal>`) or by
+   relying on Continue's own secrets store — that's a write-preserve
+   vs. rewrite decision to flag for the Bifrost scaffold (see open
+   question below).
+4. **Adapter changes**: **none needed**. The continueagent adapter
+   is already a clean pass-through. AO's gateway story lives in
+   the `internal/providers/` module's config-file writer, not the
+   adapter. AO should NOT modify `continueagent.go` for Bifrost.
+
+### Open question surfaced
+
+- **What to do with the user's pre-existing `~/.continue/config.yaml`?**
+  Mirror of the same question we hit on the codex audit: does AO
+  preserve the user's existing models/rules/MCP entries and *merge*
+  a Bifrost entry, or overwrite the whole file? The answer
+  determines whether AO's gateway config-writer is replace-or-merge
+  per project. Flagged for the Bifrost scaffold PR (RFC 002
+  implementation), not invented here.
+- **Where does the secret live?** `config.yaml`'s `${{ secrets.NAME }}`
+  references a flat key. AO needs to decide: write the Bifrost
+  token into Continue's secrets file (`~/.continue/secrets.yaml` or
+  equivalent — confirmed the schema uses dotenv-style), or stuff it
+  literally in the `apiKey:` field. The literal path is simpler but
+  leaks the token into process-listing `cat` of the config file for
+  anyone with read access to `$HOME`; the secrets file is cleaner.
+  Decision flagged, not made.
+
+
 

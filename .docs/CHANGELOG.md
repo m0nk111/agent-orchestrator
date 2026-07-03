@@ -3,6 +3,103 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 9 — 2026-07-03 (Fase 2 Research: continueagent)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `continueagent` (Continue CLI,
+  binary `cn`, npm `@continuedev/cli`). Section appended to
+  `.docs/research/opencode-env-audit.md` (file now 9 sections).
+- Verified sources:
+  - `docs.continue.dev/guides/cli` — CLI install/usage.
+  - `docs.continue.dev/reference` — `config.yaml` schema; per-model
+    `apiBase` confirmed as a top-level field of every model entry.
+  - `docs.continue.dev/reference/yaml-migration` — Continue Global
+    Directory is `~/.continue` (Mac/Linux), `%USERPROFILE%\.continue`
+    (Windows).
+  - Direct fetch of `extensions/cli/src/env.ts` — only two env vars
+    read at CLI bootstrap: `CONTINUE_API_BASE`,
+    `CONTINUE_GLOBAL_DIR`. Both named explicitly.
+  - Direct fetch of `extensions/cli/src/auth/authEnv.ts` — auth.json
+    lives at `path.join(env.continueHome, "auth.json")`, populated
+    interactively via `/login`.
+  - `extensions/cli/scripts/install.sh` — confirms package
+    `@continuedev/cli`, binary `cn`, Node ≥ 20.20.1.
+- Confirmed adapter (`continueagent.go:187`) is one-env-touch
+  pass-through: only `os.Getenv("APPDATA")` for Windows path
+  resolution.
+- `TODO.md` Phase-2 Research sub-list ticked:
+
+  ```
+  - [x] continueagent — audit in same file
+        "continueagent" section; sourced from
+        docs.continue.dev/guides/cli + /reference +
+        /reference/yaml-migration +
+        raw.githubusercontent.com/continuedev/continue/main/extensions/cli/src/env.ts
+        (verified 2026-07-02). Clean Bifrost route via per-model
+        apiBase in ~/.continue/config.yaml; CLI also reads
+        CONTINUE_API_BASE (Hub only) and CONTINUE_GLOBAL_DIR.
+        Adapter: only APPDATA Windows lookup (pass-through).
+  ```
+
+**Headline finding**
+
+- Continue is **the cleanest gateway-fetchable adapter in the audit
+  queue so far**. Every per-model entry in `config.yaml` exposes
+  `apiBase` (provider-agnostic override of the per-model endpoint) and
+  `apiKey` (with `${{ secrets.NAME }}` placeholder syntax).
+- AO can route every Continue session through Bifrost by writing
+  one entry into `~/.continue/config.yaml`: a single model with
+  `provider: openai` (since Bifrost speaks OpenAI-compat),
+  `apiBase: http://127.0.0.1:<bifrost-port>/v1`, and a
+  `${{ secrets.AO_BIFROST_TOKEN }}` placeholder.
+- **No adapter change needed**: the AO continueagent adapter is
+  already a clean pass-through. AO's gateway story lives in the
+  future `internal/providers/` module's config-writer, not in the
+  adapter.
+- Negative findings:
+  - Continue does not honor `OPENAI_API_BASE` /
+    `ANTHROPIC_BASE_URL` / etc. directly from env for per-model
+    traffic; the `apiBase:` config field replaces them.
+  - There's no `CONTINUE_API_KEY` style global env var — auth
+    tokens come from `config.yaml`'s `apiKey` (with secrets
+    resolution) or `auth.json` (interactive `/login`).
+
+**Open questions surfaced (NOT resolved — flagged for Bifrost PR)**
+
+- **Preserve-vs-rewrite for `~/.continue/config.yaml`**: AO may
+  need to merge a single Bifrost entry into the user's existing
+  Continue config (preserving their models / MCP / rules / prompts)
+  instead of overwriting. Same shape of question we hit on the
+  `codex` audit (project vs. user config layer). Decision flagged,
+  not made.
+- **Where the Bifrost token lives**: `config.yaml` `apiKey:` literal
+  vs. Continue's secrets file (dotenv-style format; documented in
+  the reference). Literal path leaks the token via `cat` to anyone
+  with read on `$HOME`; secrets-file path is cleaner. Decision
+  flagged, not made.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- Geen DECISIONS.md blockers geraakt (A, B, C nog open user-kant).
+  Wel twee audit-internal blockers geflagd (config-preserve /
+  token-storage) die aan de Bifrost-PR moeten worden overgelaten.
+
+**Voorgestelde volgende iteratie (in volgorde)**
+
+1. `cursor` — likely OAuth-bound commercial adapter like `copilot`;
+   expecting another negative finding on Bifrost routes. Useful to
+   confirm pattern that closed CLIs stay closed while OSS ones route
+   freely.
+2. `crush` — open-source, OpenAI-compat provider shape is plausible
+   again (similar pattern to aider/codex).
+3. Reassess after iteration 10 — if cursor is also a negative
+   finding, switch to auditing the long-tail batch together
+   (`agy`, `vibe`, `kimi`, `kiro`, `pi`, `qwen`, `grok`,
+   `autohand`, `auggie`, `amp`, `devin`, `droid`, `goose`,
+   `kilocode`) so each authoritative source citation is one WebFetch
+   call and a 20-line section.
+
 ## Iteratie 8 — 2026-07-03 (Fase 2 Research: copilot)
 
 **Wat is geland**
