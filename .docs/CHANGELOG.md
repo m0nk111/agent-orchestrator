@@ -3,6 +3,73 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 4 — 2026-07-03 (Fase 2 Research: claude-code)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — second slice, `claude-code` audit, with
+  verified source.** The TODO.md claim "`ANTHROPIC_BASE_URL` /
+  `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL`, already confirmed" had
+  no pinned citation; this iteration finds the authoritative docs URL
+  and pins it.
+- Authoritative sources surfaced and verified live (2026-07-02):
+  - <https://code.claude.com/docs/en/env-vars> — canonical env-var
+    table for Claude Code. Confirms the names and one-line semantics
+    of `ANTHROPIC_API_KEY` (→ `x-api-key`),
+    `ANTHROPIC_AUTH_TOKEN` (→ `Authorization: Bearer …`),
+    `ANTHROPIC_BASE_URL` (gateway endpoint override),
+    `ANTHROPIC_MODEL` (`/model` picker), `ANTHROPIC_CUSTOM_HEADERS`,
+    plus cloud-provider-specific overrides (Bedrock/Vertex/Foundry —
+    out of scope for Bifrost).
+  - <https://code.claude.com/docs/en/llm-gateway-connect> — the
+    explicit "roll out a gateway" recipe using
+    `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` (or `…_API_KEY`).
+    This is the exact knob Bifrost wants to drive.
+- Verified the URL
+  (`docs.anthropic.com/en/docs/claude-code/environment-variables`)
+  deprecated → 301-redirects to `code.claude.com/docs/en/env-vars`;
+  no content lost in the move. `code.claude.com/docs/en/environment-variables`
+  itself returns 404 (404 is the platform's "URL changed" signal —
+  canonical id is `/env-vars`).
+- Grep of `backend/internal/adapters/agent/claudecode/claudecode.go`
+  for `ANTHROPIC_|os.Setenv|os.Getenv` returned only one hit: the
+  Windows-only `APPDATA` lookup (line 360) for shell-tool path
+  resolution. **No** provider-level env overrides come from the AO
+  claudecode adapter today. So routing claudecode through Bifrost
+  needs zero adapter-side code: simply inject the gateway URL +
+  credential into the spawned session's environment at session-start,
+  and Claude Code picks them up natively.
+- New content appended to `.docs/research/opencode-env-audit.md` as
+  the `claude-code` section (single audit file, two adapter
+  sections — keeps TODO.md's pointer unchanged).
+- `.docs/TODO.md` Phase 2 Research #1 progress sub-list ticked:
+  `claude-code` `[ ] → [x]` with source citation inline.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- 21 remaining adapters (`aider` … `vibe`) on the audit list each
+  have their own CLI; none is user-blocked yet (only research), so
+  they can be tackled sequentially in upcoming iterations.
+  Audit-start-time per adapter is small (~5–10 min each); room for
+  2–4 per hour-loop budget.
+- Open question C (`AO_HOME` create-vs-error) and the
+  cross-platform smoke matrix are still pending from the previous
+  iteration, but neither blocks Research #1.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. Begin adapter audit #3: `codex` (most likely to have non-trivial
+   `OPENAI_BASE_URL` prefix knobs).
+2. Optionally batch `aider` and `cline` (both have well-known
+   provider-override env vars worth pinning).
+3. Skip `agy` / `vibe` / `kimi` until the obvious ones are done —
+   those are least-likely-known and can be researched as their
+   entries come up.
+4. The Phase 2 Research #1 list will not block Phase 2 design; the
+   audit can complete in parallel with the first scaffolding
+   commit, since the first Bifrost driver only needs
+   `ANTHROPIC_BASE_URL` (claudecode) and one opencode knob to land.
+
 ## Iteratie 3 — 2026-07-03 (Fase 2 Research: opencode)
 
 **Wat is geland**

@@ -56,7 +56,7 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 
 #### Per-adapter audit progress (Phase 2 Research #1)
 - [x] `opencode` — audit in `.docs/research/opencode-env-audit.md` (commit 21f1403c).
-- [ ] `claude-code` — to verify the `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL` set (TODO claims already confirmed; pin source).
+- [x] `claude-code` — audit in `.docs/research/opencode-env-audit.md` "claude-code" section; sourced from `https://code.claude.com/docs/en/env-vars` and `/docs/en/llm-gateway-connect` (verified 2026-07-02).
 - [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `codex`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do.
 - [ ] Decide Bifrost distribution mechanism: vendored binary download on first run, Docker container, or system package expectation
 - [ ] Confirm Bifrost's own bind-host default and whether it can be pinned to loopback-only (must match AO's own security posture)
