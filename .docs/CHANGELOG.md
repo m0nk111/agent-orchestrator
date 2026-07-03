@@ -3,6 +3,96 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 15 — 2026-07-03 (Fase 2 Research: autohand)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `autohand` (Autohand AI Code,
+  binary `autohand`, npm `@autohand/code-cli`, upstream repo
+  `autohandai/code-cli` — open-source). Section appended to
+  `.docs/research/opencode-env-audit.md`.
+- Source citations (all direct-fetched or read on 2026-07-03):
+  - `backend/internal/adapters/agent/autohand/autohand.go:1-11` —
+    verbatim package doc: "Autohand is an autonomous coding agent
+    with a non-interactive command mode (`autohand -p <prompt>` /
+    positional prompt), native session resume
+    (`autohand resume <sessionId>`), and a native hook/lifecycle
+    system whose events (session-start, stop, permission-request,
+    ...) AO maps onto activity states."
+  - `autohand.go:75-99` — launch argv shape
+    `autohand [--path <workspace>] [<approval flags>] [--sys-prompt <value>] [-- <prompt>]`.
+  - `autohand.go:115-134` — restore argv shape
+    `autohand resume [--path <workspace>] <sessionId>` (no
+    approval flags on resume).
+  - `autohand.go:165-176` — permission mapping table:
+    Default→no flag, AcceptEdits→`--yes`, Auto→`--unrestricted`,
+    BypassPermissions→`--unrestricted`.
+  - `autohand.go:88-92` — system prompt via `--sys-prompt` with
+    auto-detect file vs inline.
+  - `autohand.go:211` — single env-touch: `os.Getenv("APPDATA")`
+    for Windows binary-path resolution (pass-through).
+  - `autohand/hooks.go` (337 lines) — full hooks installer;
+    manages `~/.autohand/config.{json,toml,yaml,yml}` paths, no
+    AO gateway env reads (filesystem pass-through).
+  - `autohandai/code-cli/main/.env.example` — direct-fetched.
+    Verbatim 5 named env vars: `AUTOHAND_API_URL` (default
+    `https://api.autohand.ai`, **the base-URL knob for Autohand's
+    own feedback server**), `AUTOHAND_SECRET` (feedback auth),
+    `AUTOHAND_CONTEXT_COMPACT`, `AUTOHAND_CONTEXT_WINDOW`,
+    `AUTOHAND_RESERVE_TOKENS` (default 16000).
+  - `autohandai/code-cli/main/src/config.ts` — direct-fetched.
+    `process.env` read list: `AUTOHAND_API_URL`, `AUTOHAND_SECRET`,
+    `AUTOHAND_CONFIG`, AZURE_OPENAI_KEY/ENDPOINT/DEPLOYMENT/API_VERSION
+    + AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET, AWS_REGION,
+    AWS_DEFAULT_REGION. `defaultBaseUrlFor(provider, port?)` exports
+    11 base URLs: openrouter, ollama, llamacpp, openai, mlx,
+    llmgateway, zai, sakana, deepseek, bedrock, nvidia.
+  - `autohandai/code-cli/main/README.md` — direct-fetched.
+    "Supported Providers" table names **9 explicit providers**:
+    openrouter, llmgateway, openai, bedrock, deepseek, ollama,
+    llamacpp, mlx, zai.
+  - `gh api repos/autohandai/code-cli/git/trees/main?recursive=1` —
+    probed; `src/providers/` directory has 24+ provider-class files
+    including NVIDIA, Cerebras, VertexAI, XAI (Grok), Sakana,
+    LlamaCpp, MLX, plus the Bifrost-shaped
+    `CustomOpenAICompatibleProvider.ts`.
+  - `autohandai/code-cli/main/src/providers/customProviders.ts` —
+    direct-fetched. **`CUSTOM_PROVIDER_PREFIX = "custom:"`** with
+    `normalizeCustomProviderId(input)` / `parseCustomProviderName(provider)`
+    / `getCustomProviderConfig(config, provider)` reading
+    `config.customProviders[id]`. **The Bifrost-shaped OpenAI-compat
+    injection point**.
+  - `autohandai/code-cli/main/src/providers/DeepSeekProvider.ts` — direct-fetched.
+    Representative pattern: `DEEPSEEK_DEFAULT_BASE_URL="https://api.deepseek.com"`,
+    constructor resolves
+    `effectiveConfig.baseUrl = config.baseUrl ?? DEEPSEEK_DEFAULT_BASE_URL`.
+    Same shape repeated per provider — explicit per-provider base-URL
+    resolution everywhere.
+- **Verdict**: **fifth clean Bifrost route**, with two clean injection
+  points:
+  1. `AUTOHAND_API_URL` env var → Autohand's own
+     telemetry/feedback base-URL knob.
+  2. `custom:` provider prefix + `config.customProviders.<id>`
+     map → OpenAI-compatible model traffic, via
+     `CustomOpenAICompatibleProvider` glue.
+- **Adapter changes needed**: **none.** Adapter is pass-through
+  (single `APPDATA` Windows read). Bifrost's gateway entry is a
+  config-file or env-var injection at runtime, no Go code change.
+- Audit-internal flags (not Phase-2 blocking):
+  - `AUTOHAND_API_URL` is officially scoped to telemetry path
+    only, not the model path — Bifrost reuse depends on whether
+    Bifrost offers a telemetry-compatible API.
+  - `customProviders.ts` `CustomProviderSettings` shape
+    (referenced as imported type) wasn't direct-fetched;
+    surface for Phase-2 followup if Bifrost adopts the
+    `custom:` prefix.
+  - `AUTOHAND_CONFIG` env var override (path-to-config) is
+    useful for AO_HOME-friendliness; surface for Phase-2
+    followup.
+
+**Open audits queue (10)** — `devin`, `droid`, `goose`, `grok`,
+`kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe`.
+
 ## Iteratie 14 — 2026-07-03 (Fase 2 Research: auggie)
 
 **Wat is geland**

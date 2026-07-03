@@ -1796,6 +1796,351 @@ plumbing, no base URL hook. Same shape as Cursor / amp on the
   bubble a CLI error; not Bifrost-relevant. Flagged only as
   a UX note, not a v1 audit constraint.
 
+## `autohand` (Autohand AI Code, binary `autohand`, npm `@autohand/code-cli`, repo `autohandai/code-cli`)
+
+Source adapter:
+`backend/internal/adapters/agent/autohand/autohand.go` (284 lines)
++ `hooks.go` (337 lines) + `activity.go` (26 lines),
+package `autohand`, adapter ID `"autohand"`.
+
+### Adapter self-description (verbatim)
+
+> "Package autohand implements the Autohand Code agent adapter:
+> launching new command-mode sessions, resuming native sessions
+> by id, installing AO's lifecycle hooks into Autohand's config,
+> and reading hook-derived session info.
+>
+> Autohand ('autohand') is an autonomous coding agent with a
+> non-interactive command mode (`autohand -p <prompt>` /
+> positional prompt), native session resume (`autohand resume
+> <sessionId>`), and a native hook/lifecycle system whose events
+> (session-start, stop, permission-request, ...) AO maps onto
+> activity states. See hooks.go for hook installation and
+> activity.go for the event→state mapping."
+> — `autohand.go:1-11`
+
+Launch argv (`autohand.go:75-99`):
+
+```
+autohand [--path <workspace>] [<approval flags>] [--sys-prompt <value>] [-- <prompt>]
+```
+
+Restore argv (`autohand.go:115-134`):
+
+```
+autohand resume [--path <workspace>] <sessionId>
+```
+
+Approval mode mapping (per `autohand.go:165-176`):
+
+| AgentOps mode         | Autohand argv fragment            |
+|-----------------------|-----------------------------------|
+| `Default`             | *(no flag — defer to user's config; permissions.mode)* |
+| `AcceptEdits`         | `--yes`                            |
+| `Auto`                | `--unrestricted`                   |
+| `BypassPermissions`   | `--unrestricted`                   |
+
+Note: AO's test (`autohand_test.go`'s expected-values
+table) documents this mapping exactly. Adapter
+self-doc-comment notes that "Autohand has no distinct
+'accept-edits' mode, so it maps to `--yes` (auto-confirm
+risky actions) — the least-privileged non-interactive
+option".
+
+System prompt (per `autohand.go:88-92`) uses
+`--sys-prompt` and auto-detects file vs inline value based
+on the AO field used (`SystemPromptFile` overrides
+`SystemPrompt`).
+
+### Env-var surface — adapter itself
+
+Single touch (`autohand.go:211`):
+
+```
+if appData := os.Getenv("APPDATA"); appData != "" {
+    candidates = append(candidates,
+        filepath.Join(appData, "npm", "autohand.cmd"),
+        filepath.Join(appData, "npm", "autohand.exe"),
+    )
+}
+```
+
+— Windows-only binary-path resolution. Zero other env
+reads/writes in `autohand.go`, `hooks.go`, or `activity.go`.
+
+`hooks.go` (337 lines) is a full hooks install/resolver —
+it manages Autohand config files (the
+`~/.autohand/config.{json,toml,yaml,yml}` paths), but
+does **not** read the AO gateway's env vars. It's a
+filesystem-level pass-through to Autohand's own config.
+
+### Env-var surface — Autohand CLI proper (open-source)
+
+Autohand is open-source — `autohandai/code-cli` is a
+public repo with 140 stars, last commit 2026-07-03
+(verified via `gh search repos "autohand"`).
+Install:
+
+```
+curl -fsSL https://autohand.ai/install.sh | bash
+# or
+git clone https://github.com/autohandai/cli.git
+cd cli && bun install && bun run build && bun add -g .
+```
+
+#### `.env.example` (direct-fetched from
+`autohandai/code-cli/main/.env.example`)
+
+Verified verbatim — these are the named env vars the CLI
+loads from the project's `.env`:
+
+| Env var                    | Default                                  | Purpose |
+|----------------------------|------------------------------------------|---------|
+| `AUTOHAND_API_URL`         | `https://api.autohand.ai`                | **Base URL knob** for Autohand's own telemetry/feedback server (the only global URL the CLI exposes) |
+| `AUTOHAND_SECRET`          | *(required for feedback submission)*     | Company secret key for telemetry/feedback |
+| `AUTOHAND_CONTEXT_COMPACT` | *(boolean; default `true`)*              | Enable/disable context compaction |
+| `AUTOHAND_CONTEXT_WINDOW`  | *(token count; default unspecified)*     | Override context window size |
+| `AUTOHAND_RESERVE_TOKENS`  | `16000`                                  | Reserve tokens for model output |
+
+**This is the audit-critical base-URL knob for Autohand.**
+The CLI honors `AUTOHAND_API_URL` for its own server,
+which is the seam AO's Bifrost can route (redirect
+Autohand's outbound telemetry/auth to Bifrost; OR
+re-purpose the same shape for model traffic if Autohand
+ever propagates provider base-URLs through the same
+key, though current docs show that doesn't happen).
+
+#### `src/config.ts` (direct-fetched from
+`autohandai/code-cli/main/src/config.ts`)
+
+Verified verbatim — every `process.env.*` read in the
+config-loading module:
+
+```
+process.env.AUTOHAND_API_URL
+process.env.AUTOHAND_SECRET
+process.env.AUTOHAND_CONFIG                // path-to-config override
+
+process.env.AZURE_OPENAI_KEY
+process.env.AZURE_OPENAI_ENDPOINT
+process.env.AZURE_OPENAI_DEPLOYMENT
+process.env.AZURE_OPENAI_API_VERSION
+process.env.AZURE_TENANT_ID
+process.env.AZURE_CLIENT_ID
+process.env.AZURE_CLIENT_SECRET
+
+process.env.AWS_REGION
+process.env.AWS_DEFAULT_REGION
+```
+
+Per-provider default base URLs in source literals
+(`src/config.ts`):
+```
+const DEFAULT_BASE_URL        = "https://openrouter.ai/api/v1"
+const DEFAULT_OLLAMA_URL      = "http://localhost:11434"
+const DEFAULT_LLAMACPP_URL    = "http://localhost:8080"
+const DEFAULT_OPENAI_URL      = "https://api.openai.com/v1"
+const DEFAULT_MLX_URL         = "http://localhost:8080"
+const DEFAULT_LLMGATEWAY_URL  = "https://api.llmgateway.io/v1"
+const DEFAULT_ZAI_URL         = "https://api.z.ai/api/paas/v4"
+const DEFAULT_SAKANA_URL      = "https://api.sakana.ai/v1"
+const DEFAULT_DEEPSEEK_URL    = "https://api.deepseek.com"
+const DEFAULT_BEDROCK_REGION  = "us-east-1"
+```
+
+`defaultBaseUrlFor(provider, port?)` also includes:
+- `nvidia → https://integrate.api.nvidia.com/v1`
+- `bedrock → https://bedrock-runtime.<region>.amazonaws.com`
+  (Converse mode; or `/openai/v1` suffix for OpenAI-compat mode)
+
+#### README `Supported Providers` table (direct-fetched)
+
+The user-facing stable surface per the README is **9
+named providers**:
+
+```
+| Provider     | Config Key |
+|--------------|------------|
+| OpenRouter   | openrouter |
+| LLMGateway   | llmgateway |
+| OpenAI       | openai     |
+| AWS Bedrock  | bedrock    |
+| DeepSeek     | deepseek   |
+| Ollama       | ollama     |
+| llama.cpp    | llamacpp   |
+| MLX          | mlx        |
+| Z.ai         | zai        |
+```
+
+#### Source-tree support (broader than README)
+
+`src/providers/` directory lists **24+ provider classes**:
+
+```
+AzureClient.ts, AzureProvider.ts
+BedrockProvider.ts
+CerebrasClient.ts, CerebrasProvider.ts
+CustomOpenAICompatibleProvider.ts
+DeepSeekProvider.ts
+LLMGatewayClient.ts, LLMGatewayProvider.ts
+LLMProvider.ts
+LlamaCppProvider.ts, MLXProvider.ts
+NVIDIAClient.ts, NVIDIAProvider.ts
+OllamaProvider.ts
+OpenAIProvider.ts
+OpenRouterClient.ts, OpenRouterProvider.ts
+ProviderFactory.ts
+SakanaProvider.ts
+VertexAIProvider.ts                 ← Vertex AI
+XAIProvider.ts                      ← xAI (Grok)
+ZaiProvider.ts
+customProviders.ts                  ← custom:
+```
+
+— adding **Cerebras**, **NVIDIA**, **Sakana**,
+**Vertex AI**, **XAI (Grok)**, and a `CustomOpenAICompatibleProvider` /
+`customProviders.ts` slot to the stable surface.
+
+#### `customProviders.ts` (direct-fetched)
+
+The Bifrost-shaped surface. Verified verbatim — `custom:`
+prefix in provider id:
+
+```ts
+const CUSTOM_PROVIDER_PREFIX = "custom:";
+
+export function normalizeCustomProviderId(input: string): string {
+  return input.trim().toLowerCase()
+    .replace(/^custom:/i, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function getCustomProviderConfig(
+  config: Pick<AutohandConfig, "customProviders">,
+  provider: ProviderName | string,
+): CustomProviderSettings | undefined {
+  const id = parseCustomProviderName(provider);
+  if (!id) return undefined;
+  const entry = config?.customProviders?.[id];
+  if (!entry || entry.disabled === true) return undefined;
+  return { ...entry, id };
+}
+```
+
+— i.e. an Autohand user can add a `custom:my-bifrost`
+entry under `config.customProviders.<id>` with their own
+`baseUrl`/`apiKey`/`model`, and Autohand routes model
+traffic through that custom provider via the
+`CustomOpenAICompatibleProvider` glue.
+
+This is **the explicit Bifrost seam** in the Autohand
+codebase.
+
+#### Per-provider env-var convention (the
+NL-name → env mapping)
+
+The autonomy of each provider's per-vendor env-var comes
+from `src/providers/<Name>Client.ts` — each provider
+class has its own client that reads the canonical env var
+(`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, etc.) when
+constructing API requests. Verbatim representative
+extract from `DeepSeekProvider.ts`:
+
+```ts
+export const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
+export const DEEPSEEK_MODELS = [
+  "deepseek-v4-flash",
+  "deepseek-v4-pro",
+  "deepseek-chat",
+  "deepseek-reasoner",
+];
+
+export class DeepSeekProvider implements LLMProvider {
+  constructor(config: DeepSeekSettings, networkSettings?: NetworkSettings) {
+    const effectiveConfig: LLMGatewaySettings = {
+      ...config,
+      baseUrl: config.baseUrl ?? DEEPSEEK_DEFAULT_BASE_URL,
+    };
+    this.client = new LLMGatewayClient(effectiveConfig, networkSettings, {
+      serviceName: "DeepSeek",
+      credentialName: "DeepSeek API key",
+      accountName: "DeepSeek account",
+    });
+    this.model = config.model;
+  }
+}
+```
+
+— i.e. **explicit `baseUrl ?? DEFAULT` resolution** in
+each provider. If AO writes a custom config entry under
+`config.providers.deepseek.baseUrl = "https://bifrost..."`,
+Autohand's provider classes (via the
+`CustomOpenAICompatibleProvider` factory) can be steered
+to Bifrost. Same pattern is repeated per provider.
+
+### Implication for AO provider gateway (Bifrost)
+
+Autohand is **the fifth clean Bifrost route** in the
+queue (after claude-code, continueagent, crush,
+kilocode). It's the **richest** so far because the
+cleanest path is:
+
+1. **Custom provider entry** — write a
+   `config.customProviders.bifrost` block to
+   `~/.autohand/config.json` (or AOHOME fallback path)
+   pointing at Bifrost's OpenAI-compatible endpoint,
+   with the `custom:bifrost` prefix.
+2. **Activate** — via the
+   `CUSTOM_PROVIDER_PREFIX = "custom:"` lookup, the
+   `CustomOpenAICompatibleProvider` factory wires the
+   custom config in.
+3. **Model selection** — `[--model <name>]` flag at
+   launch controls which custom provider/model is used
+   (consistent with autohand.go-mapped `defaultBaseUrlFor`).
+4. **`AUTOHAND_API_URL` env var** — a **second seam**
+   for routing Autohand's *own* telemetry/feedback server
+   to Bifrost, but Bifrost is likely OpenAI-compat only,
+   so this seam only matters if Bifrost also offers a
+   telemetry-compatible API.
+
+**No adapter change needed.** Autohand's adapter is
+fully pass-through (single `APPDATA` Windows read at
+`autohand.go:211`); Bifrost's gateway entry is a
+config-file or env-var-only injection at runtime.
+
+### Adapter changes needed for Bifrost
+
+**None.** The adapter is already correct. Phase-2
+gateway-writers only need to:
+
+- (preferred) write a `custom:bifrost` entry under
+  `config.customProviders` in `~/.autohand/config.json`
+- (alt) set the per-provider `baseUrl` in-place via
+  `config.providers.<name>.baseUrl`
+
+Both paths land outside the adapter — no Go code change
+in `autohand.go`.
+
+### Open questions surfaced
+
+- **`AUTOHAND_API_URL` is officially scoped to the
+  telemetry path, not the model path.** AO's Bifrost
+  could route telemetry into its `/api/autohand`
+  shim, but if Bifrost is OpenAI-compat-only, this
+  seam is out of scope. Surface flagged; not
+  Phase-2-blocking.
+- **`customProviders.ts` config-format details** —
+  the `CustomProviderSettings` shape (referenced as
+  imported type) wasn't direct-fetched this round.
+  Surface flagged for Phase-2 followup if Bifrost
+  adopts the `custom:` prefix.
+- **`AUTOHAND_CONFIG` env var override** — useful
+  for AO_HOME-friendliness (point Autohand's config
+  loader at `$AO_HOME/autohand/config.json`).
+  Surface flagged; Phase-2 followup.
+
+
 
 
 
