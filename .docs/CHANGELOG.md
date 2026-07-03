@@ -3,6 +3,83 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 5 — 2026-07-03 (Fase 2 Research: codex)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — third slice, `codex` audit, with verified
+  source.** Codex was the highest-priority remaining adapter on the
+  audit queue (well-known CLI with documented provider-overrides,
+  picked over the lesser-knowns).
+- Authoritative sources surfaced and verified live (2026-07-02):
+  - <https://developers.openai.com/codex/auth> — login flows
+    (`codex login --with-access-token` reads `CODEX_ACCESS_TOKEN`
+    from stdin), `CODEX_CA_CERTIFICATE` env override (falls back to
+    `SSL_CERT_FILE`), credential-store configuration
+    (`cli_auth_credentials_store = "keyring"|"file"|"auto"`),
+    custom-provider auth options
+    (`requires_openai_auth` vs `env_key`).
+  - <https://developers.openai.com/codex/config-basic> — config-file
+    layers (`~/.codex/config.toml` + `.codex/config.toml` walking
+    from project root down, only loaded for trusted projects),
+    `model`, `approval_policy`, `sandbox_mode`, profile-and-system
+    layers, `shell_environment_policy`, `[features]` toggle table.
+  - <https://developers.openai.com/codex/config-advanced> — `[model_providers.<id>]`
+    schema (`base_url`, `env_key`, `http_headers`,
+    `env_http_headers`, `wire_api`, `query_params`,
+    `auth.command/args/timeout_ms/refresh_interval_ms`), built-in
+    provider overrides (`openai_base_url`, `chatgpt_base_url`), the
+    **security call-out** that project-layer `config.toml` cannot
+    redefine provider/host/notify/telemetry keys ("Codex ignores
+    the following keys in project-local … and prints a startup
+    warning when it sees them").
+- Grep of `backend/internal/adapters/agent/codex/codex.go` for
+  `OPENAI_BASE_URL|CODEX_|os.Setenv|os.Getenv|openai_base|chatgpt_base`:
+  only the Windows-only `APPDATA` lookup (line 170) for shell-tool
+  path resolution matches. **No** provider-level overrides from
+  the AO side today.
+- Key insight flagged in the audit: routing codex through Bifrost
+  requires writing to **user-layer** `~/.codex/config.toml` (or a
+  profile file there), because project-layer writes for the
+  provider keys are silently ignored. That is one of the few
+  adapters where AO cannot rely on the worktree alone; the
+  eventual `internal/providers/` scaffold will need a user-config
+  merge step that preserves any user pre-existing entries.
+- New audit section appended to
+  `.docs/research/opencode-env-audit.md` (one audit file, three
+  adapter sections — keeps TODO.md's pointer stable).
+- `.docs/TODO.md` Phase 2 Research #1 progress sub-list ticked:
+  `codex` `[ ] → [x]` with source citation inline.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- 20 remaining adapters on the audit list (`aider` … `vibe`) each
+  have their own CLI; none is user-blocked; can be tackled
+  sequentially in upcoming iterations. Highest-yield next
+  targets: `aider`, `cline`, `copilot` — all well-known provider
+  knobs worth pinning to citations.
+- Open question C (`AO_HOME` create-vs-error) and the
+  cross-platform smoke matrix are still pending, but neither
+  blocks the audit.
+- A second-order question surfaced by the codex audit:
+  when AO writes `~/.codex/config.toml` to apply a provider
+  override, does it merge with the user's pre-existing entries
+  (preserve unknown keys) or overwrite? Decision needed for the
+  Bifrost scaffold, not for this row. Not invented here; written
+  into the audit as an "open question" footer.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. Continue with `aider` (audit-queue top-3 by expected yield).
+2. `cline` and `copilot` in the same iteration if budget allows.
+3. When the obvious/established adapters are done, the
+   lesser-knowns (`agy`, `vibe`, `kimi`, `kiro`, `pi`, `qwen`,
+   `grok`, `continueagent`) can be a batch.
+4. Independent of audit progress, the cross-platform smoke
+   matrix (Linux-only currently) is a low-risk effective
+   improvement and could be folded into a non-Research #1
+   iteration next.
+
 ## Iteratie 4 — 2026-07-03 (Fase 2 Research: claude-code)
 
 **Wat is geland**

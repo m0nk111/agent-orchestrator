@@ -15,7 +15,8 @@ endpoint without per-adapter code branching.
 
 - [x] `opencode` — done below.
 - [x] `claude-code` — done in next section.
-- [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `codex`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
+- [x] `codex` — done further down.
+- [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do in follow-up iterations.
 
 ## `opencode` (sst/opencode)
 
@@ -157,3 +158,125 @@ config → Claude Code env mapping" item can rely on
 mapping without inventing new knobs; the question is purely how
 those vars get populated from Bifrost's perspective, which is its
 own overscope.
+
+---
+
+## `codex` (OpenAI Codex CLI)
+
+Source: `backend/internal/adapters/agent/codex/codex.go`. The
+adapter passes no provider env vars to the spawned CLI today (only
+`APPDATA` on Windows for shell-tool path resolution, line 170 — not
+provider-related).
+
+What Codex itself reads for **provider routing**, per the official
+OpenAI docs (verified 2026-07-02):
+
+| Var / key                 | Where                                               | Purpose                                                  |
+|---------------------------|-----------------------------------------------------|----------------------------------------------------------|
+| `CODEX_HOME`              | env                                                 | Root dir for local state. Defaults to `~/.codex`.         |
+| `CODEX_ACCESS_TOKEN`      | env                                                 | Pre-issued ChatGPT subscription access token (read from stdin only; one-shot at `codex login --with-access-token`). |
+| `CODEX_CA_CERTIFICATE`    | env                                                 | PEM bundle of corporate root CA(s) for HTTPS / WSS. Falls back to `SSL_CERT_FILE` when unset. |
+| `openai_base_url`         | `~/.codex/config.toml` (or profile, system)         | Overrides base URL for the built-in `openai` provider only. Does **not** apply to Bedrock or custom providers. |
+| `chatgpt_base_url`        | `~/.codex/config.toml` (or profile, system)         | Similar role for the built-in `chatgpt` provider.          |
+| `model_provider`          | `config.toml`                                       | Selects active provider. Built-ins: `openai`, `ollama`, `lmstudio`, `amazon-bedrock`. Custom via `model_providers.<id>`. |
+| `model`                   | `config.toml` + `--model` CLI flag                  | Default model id (e.g. `"gpt-5.5"`).                       |
+| `[model_providers.<id>]`  | `config.toml`                                       | Defines a custom provider with `base_url`, `env_key`, `http_headers`, `env_http_headers`, `wire_api`, `query_params`, optional `auth.command`. |
+
+Source URLs:
+
+- <https://developers.openai.com/codex/auth> — login methods,
+  `CODEX_ACCESS_TOKEN`, `CODEX_CA_CERTIFICATE`.
+- <https://developers.openai.com/codex/config-basic> — config
+  precedence, `model = "gpt-5.5"` default, `shell_environment_policy`.
+- <https://developers.openai.com/codex/config-advanced> — `openai_base_url`,
+  `chatgpt_base_url`, `[model_providers.<id>]` schema, env-key,
+  http-headers, auth-command helper, Bedrock and Azure examples.
+
+### Custom provider recipe (pin source)
+
+From `config-advanced`, the canonical shape is:
+
+```
+[model_providers.proxy]
+name = "OpenAI using LLM proxy"
+base_url = "https://proxy.example.com/v1"
+env_key = "OPENAI_API_KEY"
+```
+
+with optionals:
+
+```
+http_headers = { "X-Example-Header" = "example-value" }
+env_http_headers = { "X-Example-Features" = "EXAMPLE_FEATURES" }
+wire_api = "responses"     # or "chat"
+auth.command = "/usr/local/bin/fetch-codex-token"
+auth.args = ["--audience", "codex"]
+auth.timeout_ms = 5000
+auth.refresh_interval_ms = 300000
+```
+
+Setting `requires_openai_auth = true` switches off the
+`env_key`-driven auth and uses the saved ChatGPT/API login
+override instead.
+
+### Security-relevant restrictions
+
+From `config-advanced` verbatim:
+
+> Project config files can't override settings that redirect
+> credentials, alter host-owned app request metadata, change
+> provider auth, select config profiles, or run machine-local
+> notification/telemetry commands. Codex ignores the following
+> keys in project-local `.codex/config.toml` and prints a startup
+> warning when it sees them: `openai_base_url`, `chatgpt_base_url`,
+> `apps_mcp_product_sku`, `model_provider`, `model_providers`,
+> `notify`, `profile`, `profiles`,
+> `experimental_realtime_ws_base_url`, and `otel`. Set provider,
+> notification, and telemetry keys in your user-level
+> `~/.codex/config.toml`.
+
+**Implication for AO Bifrost routing**: an `.codex/config.toml`
+written into the worktree's project layer is **silently ignored**
+when routing is involved. AO must write the file under
+`$CODEX_HOME` (or `~/.codex/`) — user level — to apply a provider
+override. This is one of the few CLI families where the AO side
+has to write a file outside the project, not just inject env.
+
+### Implication for AO provider gateway
+
+Three viable options, all assuming the project layer is respected:
+
+1. **Write `~/.codex/config.toml`** with a `[model_providers.bifrost]`
+   block plus `model_provider = "bifrost"` and `model = "<chosen>"`
+   before spawning Codex, per project. File-write location is
+   user-level on purpose. Requires preserving any user pre-existing
+   `config.toml` content (don't overwrite wholesale).
+2. **Apply per-session overlay via `-c`/`--config` flags**: Codex
+   accepts dot-notation overrides on the CLI
+   (`codex --config model_provider='"bifrost"'`). Avoids touching
+   disk, but multiple flags per command-line get unwieldy when
+   several `model_providers.*` keys move together.
+3. **Write a profile file** (`~/.codex/<proj-slug>.config.toml`)
+   under `CODEX_HOME` and invoke
+   `codex --profile <proj-slug>`. Same caveats as the user-config
+   write; the profile mechanism is explicitly built for "share the
+   base, only override selected values".
+
+`CODEX_HOME` should be set to `$AO_HOME/codex` if AO wants its own
+scratch `~/.codex`, otherwise Codex falls back to the OS-level
+`~/.codex` and could leak keys across projects. Worth raising in
+the Bifrost design discussion but not directly relevant to this
+audit (no provider-related env injection needed beyond what other
+adapters get).
+
+### Open questions surfaced
+
+- **`shell_environment_policy` default behavior**: not yet audited
+  for whether the spawned CLI inherits Bifrost's credential vars
+  into the shell tool or is gated. If gated, the credentials have
+  to land on the right side of that filter — a follow-up question
+  for the gateway integration, not for this row.
+- **`CODEX_HOME` AO subdir**: should `$AO_HOME` have a `codex/`
+  subdir by default for per-project credential separation, or
+  leave that to the eventual `internal/providers/` scaffold? Out
+  of scope for adapter-row; flagged for the scaffold PR.
