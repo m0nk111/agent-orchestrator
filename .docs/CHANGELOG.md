@@ -3,6 +3,97 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 13 — 2026-07-03 (Fase 2 Research: amp)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `amp` (Sourcegraph Amp CLI,
+  binary `amp`, npm `@ampcode/cli`). Section appended to
+  `.docs/research/opencode-env-audit.md`.
+- Source citations (all direct-fetched or read on 2026-07-03):
+  - `backend/internal/adapters/agent/amp/amp.go:1-7` — verbatim
+    self-description: "Amp activity hooks and SessionInfo
+    derivation will likely require an Amp-specific TypeScript
+    plugin, similar to opencode. Until that integration exists,
+    hook installation and SessionInfo are intentionally no-ops."
+  - `amp.go:62-87` — launch argv shape
+    `amp [--permission-mode <mode>] [--append-system-prompt ...] [-- <prompt>]`.
+  - `amp.go:108-127` — restore argv shape
+    `amp [--permission-mode <mode>] --resume <agentSessionId>`.
+  - `amp.go:137-146` — `appendPermissionFlags` mapping table:
+    `Default` (no flag), `AcceptEdits` (`acceptEdits`), `Auto`
+    (`auto`), `BypassPermissions` (`bypassPermissions`). Note that
+    **the spelling exactly matches Claude Code adapter's** —
+    strong signal the CLI is in the Claude Code family.
+  - `amp.go:166` — single env-touch: `os.Getenv("APPDATA")` for
+    Windows binary-path resolution only.
+  - `backend/internal/adapters/agent/amp/amp_test.go:62-65` — test
+    confirms expected argv pin includes `--permission-mode
+    bypassPermissions` between `amp` and `--`.
+  - `https://ampcode.com/install.sh` — direct-fetched. Install-time
+    envs: `AMP_HOME`, `AMP_STORAGE_BASE`, `AMP_URL`, `AMP_VERSION`.
+    None relevant to runtime.
+  - `https://ampcode.com/manual` — direct-fetched. Runtime envs:
+    `AMP_API_KEY`, `AMP_FORCE_BEL`, `AMP_SKIP_UPDATE_CHECK`,
+    `HTTP_PROXY`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `EDITOR`.
+    Settings namespace **`amp.*`** with 16+ documented keys, all
+    UX/tooling toggles, **none** are provider-routing.
+  - `https://ampcode.com/models` — direct-fetched. No per-vendor
+    base-URL knobs; documents models Amp routes through its own
+    server.
+  - `https://ampcode.com` root + `/docs` doc-tree — both content
+    fetched; `/docs` redirects to `authapi.ampcode.com` (auth-walled)
+    so we rely on `/manual` and `/models`.
+  - `https://registry.npmjs.org/@ampcode/cli` — direct-fetched.
+    `bin/amp.exe` only; 456 prerelease versions; no source exposed.
+  - GitHub org search via `gh api search/repositories -f
+    q="org:sourcegraph amp in:name"` — empty result; **`sourcegraph/amp-cli`
+    is not open-source**. The CLI is proprietary-distributed binary.
+- Adapter env-touches: exactly one — `APPDATA` at `amp.go:166`
+  (Windows binary-path resolution). Zero other reads/writes.
+  Adapter is fully pass-through.
+
+**Conclusie**
+
+- **No clean Bifrost route for Amp in v1.** The CLI is closed-source
+  and does not expose provider-override knobs in any reachable
+  documentation page. `AMP_API_KEY` authenticates to
+  `threads.ampcode.com` (Amp's own server), so setting it to a
+  Bifrost-issued token would not transparently route model traffic.
+- The WebSearch "claim" of `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`
+  inheritance from the underlying SDK is **hypothetical** — direct
+  fetches of every reachable page of `ampcode.com` found none of
+  these knobs documented. We explicitly discard unverified WebSearch
+  claims from the audit (`Why: WebSearch tools frequently return
+  plausible-sounding but unverified summaries; the audit's policy is
+  only cite sources actually fetched and verified`).
+- The `--permission-mode` flag values from Amp exactly mirror Claude
+  Code's, confirming the family lineage, but the SDK's env surface is
+  not surfaced to Amp CLI users.
+
+**Open questions surfaced**
+
+- **Is Amp honoring un-documented `ANTHROPIC_*` env vars from its
+  internal SDK?** Options to verify cheaply (not in this iteration):
+  - `strings(1)` on `bin/amp.exe` for the literal env-var names it
+    probes (one-time research artifact, not a maintainable surface).
+  - Sandbox test: set each `ANTHROPIC_*` env var and inspect the
+    thread/request response or `~/.config/amp/settings.json`.
+  - Contact Sourcegraph for the canonical knob list (long lead,
+    out of autonomous loop).
+  - **Not flagged as Phase-2 blocking.**
+- **`AMP_API_KEY`** — it could in principle be lifted into the
+  session by AO without breaking Amp's own auth (AO never uses it
+  for actual model traffic) but we have no evidence Bifrost could
+  *hit* the Amp server through this token. Surface flagged;
+  Phase-2 followup.
+
+**Verificatie / gates**
+
+- Markdown / section structure verified by `Edit` write state.
+  No Go / TS code touched this round — research slice only.
+  Gates deferred (no source files modified).
+
 ## Iteratie 12 — 2026-07-03 (Fase 2 Research: kilocode)
 
 **Wat is geland**

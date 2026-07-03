@@ -1412,4 +1412,209 @@ Neither path requires editing the launch-argv logic.
   (redirect Kilo's config dir to under `AO_HOME/kilo/`), but
   separate from Bifrost routing. Surface flagged; Phase-2 followup.
 
+## `amp` (Sourcegraph Amp CLI, binary `amp`, npm `@ampcode/cli`)
+
+Source adapter:
+`backend/internal/adapters/agent/amp/amp.go` (229 lines,
+package `amp`, adapter ID `"amp"`).
+
+### Adapter self-description (verbatim)
+
+> "Package amp implements the Amp agent adapter: launching new
+> interactive Amp sessions and resuming sessions when a native
+> Amp thread id is known.
+>
+> Amp activity hooks and SessionInfo derivation will likely require an
+> Amp-specific TypeScript plugin, similar to opencode. Until that
+> integration exists, hook installation and SessionInfo are
+> intentionally no-ops."
+> — `amp.go:1-7`
+
+Launch argv (per `amp.go:62-87`):
+
+```
+amp [--permission-mode <mode>] [--append-system-prompt <prompt> | --append-system-prompt-file <path>] [-- <prompt>]
+```
+
+Restore argv (per `amp.go:108-127`):
+
+```
+amp [--permission-mode <mode>] --resume <agentSessionId>
+```
+
+`appendPermissionFlags` (amp.go:137-146):
+
+| AgentOps mode        | Amp argv fragment                          |
+|----------------------|--------------------------------------------|
+| `Default`            | *(none)*                                   |
+| `AcceptEdits`        | `--permission-mode acceptEdits`            |
+| `Auto`               | `--permission-mode auto`                   |
+| `BypassPermissions`  | `--permission-mode bypassPermissions`      |
+
+Note the exact spelling matches Claude Code's `--permission-mode`
+flag values (`acceptEdits`/`auto`/`bypassPermissions`) — the
+underlying CLI is in the Claude Code family.
+
+Tests confirm (`amp_test.go`):
+- argv inversion with no `AgentSessionId` returns `ok=false`
+  (restore behaves like fresh launch fallback).
+- `--append-system-prompt-file` is preferred over
+  `--append-system-prompt` when both are set (matches Claude Code
+  adapter).
+
+### Env-var surface — adapter itself
+
+The adapter touches **exactly one** environment variable
+(`amp.go:166`):
+
+```
+if appData := os.Getenv("APPDATA"); appData != "" {
+    candidates = append(candidates,
+        filepath.Join(appData, "npm", "amp.cmd"),
+        filepath.Join(appData, "npm", "amp.exe"),
+    )
+}
+```
+
+— Windows-only binary-path resolution; same pass-through pattern as
+the other adapters.
+
+No other env reads/writes in the adapter source.
+
+### Env-var surface — Amp CLI proper
+
+The Amp CLI is proprietary, distributed via a single binary from
+`ampcode.com/install.sh`. Public env-var documentation is split
+across:
+
+#### Install-time env vars (irrelevant to runtime)
+
+From direct-fetch of `https://ampcode.com/install.sh` (verified
+2026-07-03):
+
+| Env var           | Purpose                                  |
+|-------------------|------------------------------------------|
+| `AMP_HOME`        | Base install dir (default `$HOME/.amp`)  |
+| `AMP_STORAGE_BASE`| Where to fetch the binary                |
+| `AMP_URL`         | Source for the install pubkey            |
+| `AMP_VERSION`     | Pinned version, else latest              |
+
+These control the **installer**, not the launched Amp session.
+
+#### Runtime env vars (from official docs)
+
+From direct-fetch of `https://ampcode.com/manual` (verified
+2026-07-03):
+
+| Env var                       | Purpose                                |
+|-------------------------------|------------------------------------------|
+| `AMP_API_KEY`                 | Access token (UTF-8 string token)        |
+| `AMP_FORCE_BEL`               | Force terminal bell when set              |
+| `AMP_SKIP_UPDATE_CHECK`       | Set to `1` to disable update checks      |
+| `HTTP_PROXY` / `HTTPS_PROXY`  | Node.js standard proxy knobs             |
+| `NODE_EXTRA_CA_CERTS`         | Custom CA bundle                         |
+| `EDITOR`                      | Editor for `Ctrl+G`                      |
+
+Settings namespace prefix is `amp.*`, with documented settings
+covering user-experience toggles only (`amp.fuzzy.alwaysIncludePaths`,
+`amp.showCosts`, `amp.git.commit.ampThread.enabled`,
+`amp.git.commit.coauthor.enabled`, `amp.keymap`, `amp.mcpServers`,
+`amp.defaultVisibility`, `amp.notifications.enabled`,
+`amp.skills.disableClaudeCodeSkills`, `amp.skills.path`,
+`amp.terminal.copyOnSelect`,
+`amp.terminal.detailsExpandedExpanded`,
+`amp.tools.disable`, `amp.mcpPermissions`, `amp.updates.mode`,
+`amp.admin.compatibilityDate`). **None** of these are
+provider-routing knobs.
+
+#### Negative finding (audit-critical)
+
+- **No documented `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`
+  / `ANTHROPIC_MODEL` env knob on `ampcode.com/manual`.** The
+  manual exposes user-experience and update settings, not
+  provider-override knobs. This is *inconsistent* with the
+  Claude-Code-shaped `--permission-mode` values in the AO
+  adapter, which suggests Amp uses the Claude Code SDK
+  internally but does not surface the SDK's known env knobs
+  to CLI users.
+- **No `AMP_BASE_URL`, `AMP_API_BASE_URL`, or `AMP_<VENDOR>_BASE_URL`
+  knob in any reachable doc page.** The `https://ampcode.com/models`
+  page documents which models Amp routes to via Amp's own
+  routing layer (NOT a user-configurable base-URL set), but
+  does not expose per-vendor URL knobs (verified
+  2026-07-03).
+- **No settings.json provider override key documented.**
+  The manual's `amp.*` settings list is exhaustively
+  UI-feature-focused; no `amp.provider.*`,
+  `amp.models.*`, or similar is present.
+- **`AMP_API_KEY` is the only authentication plumbing** — it
+  authenticates to Amp's own server (Amp threads /
+  threads.ampcode.com), not a vendor model API. Setting this
+  to a Bifrost-issued token would not transparently route
+  model traffic.
+
+#### A note on the WebSearch hint
+
+The initial WebSearch summary (`query: "Sourcegraph Amp CLI env
+vars ANTHROPIC_BASE_URL API key model override"`) returned a
+generic *probable* env-var list of `ANTHROPIC_*` based on the
+Claude Code SDK convention. **This is unverified** — direct
+fetches of every reachable page on `ampcode.com` (root, `/manual`,
+`/models`, `/install.sh`, plus npm metadata) found no
+documentation of these specific env knobs in Amp's own CLI.
+Treating them as a verified env surface would invalidate the
+audit; we explicitly discard the unverified claim and report
+the negative finding instead.
+
+### Binary / install shape
+
+- Single binary: `amp` (POSIX), `amp.exe` (Windows).
+- npm package: `@ampcode/cli` (the WebFetch-installed page
+  confirmed `bin: { amp: "bin/amp.exe" }` per published
+  version, plus a `node install.cjs` postinstall).
+- Homebrew: `brew install ampcode/tap/ampcode` (binary
+  `ampcode`, but no `amp` — AO's hardcoded `amp` binary resolves
+  on PATH as long as the install script's symlink targets hold).
+- Settings file:
+  `~/.config/amp/settings.json` (or `.jsonc`);
+  `--settings-file <path>` overrides.
+
+### Implication for AO provider gateway (Bifrost)
+
+- **No clean Bifrost route** in Amp CLI proper. The CLI does
+  not expose the necessary provider-override knobs in any
+  documented user-config surface.
+- The Amp adapter itself is a clean **pass-through**, so it
+  does not block Bifrost in any other way — but Bifrost
+  would have to either:
+  1. Inject provider overrides into the Amp session's
+     **process environment** such that Amp parses them
+     internally (requires reverse-engineering the binary
+     or contact with Sourcegraph). Not feasible in v1.
+  2. Slow-down option: write an Amp settings.json entry
+     that the CLI honors — but no such entry is documented,
+     so empirical testing would be required.
+  3. Out of scope for Amp routing: tell users that Amp's
+     subset of Amp's models is `threads.ampcode.com`-routed,
+     and route user-model selection via a different adapter.
+- **No adapter change needed for the existing pass-through.**
+  The adapter code remains correct.
+
+### Open question surfaced
+
+- **Is the `ANTHROPIC_*` env surface inherited from Amp's
+  internal SDK use but undocumented?** Possible paths:
+  - Reverse-engineer with `strings(1)` on `bin/amp.exe` for
+    the literal env-var names it probes (cheap, but a
+    one-time research artifact, not a maintainable surface).
+  - Contact Sourcegraph for the canonical knob list (long
+    lead time, out of autonomous loop).
+  - Test in a sandbox: set each `ANTHROPIC_*` and inspect
+    `~/.config/amp/settings.json` for whether the value is
+    shadowed or transmitted.
+  - This is **not flagged as Phase-2 blocking** because the
+    audit's negative finding is honest and current; the
+    followup is *enablement*, not correctness.
+
+
 
