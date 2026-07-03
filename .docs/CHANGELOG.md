@@ -1,0 +1,82 @@
+# CHANGELOG — autonomous fork loop
+
+This file records what each autonomous loop iteration landed on
+`fork/ao-home-and-providers`. Newest entry on top.
+
+## Iteratie 1 — 2026-07-02/03 (Fase 1: AO_HOME end-to-end)
+
+**Wat is geland**
+
+- `backend/internal/config/config.go::defaultStateDir()` honours `AO_HOME`
+  first, falls back to `$HOME/.ao`. `AO_DATA_DIR` / `AO_RUN_FILE` keep
+  winning — automatic, no extra code in `resolveRunFilePath` /
+  `resolveDataDir`. Add `AO_HOME` row to the `Load()` doc comment.
+  - commit `f9d60d58` — `TestLoadAOHome` 5/5 sub-cases PASS;
+    `go test -race ./...` overall exit 0.
+- `backend/internal/adapters/runtime/conpty/ptyregistry/registry.go`
+  stops duplicating `os.UserHomeDir()`; new `aoHomeDir()` helper routes
+  through `AO_HOME` first. Stale `ponytail:`-style comment removed.
+  - commit `137c3052` — `TestRegistryFileAOHome` 3/3 sub-cases PASS;
+    full `ptyregistry` suite stays green.
+- Electron `app.setPath("userData", …)` now reads `AO_HOME` via a
+  vitest-testable helper `resolveUserDataParent` in
+  `frontend/src/shared/user-data.ts`. Confirmed `process.env` is
+  populated synchronously, so no Electron env-loading-order issue at
+  the `app.ready`-before call site.
+  - commit `1885ddf8` — `resolveUserDataParent` 5/5 vitest cases PASS.
+- `frontend/src/shared/telemetry.ts::defaultDataDir` adds the
+  `AO_HOME` tier between `AO_DATA_DIR` (still wins) and the
+  `$HOME/.ao/data` default.
+  - commit `df3bb0b2` — 4 new vitest sub-cases PASS.
+- `frontend/src/shared/daemon-discovery.ts::defaultRunFilePath` finally
+  reads its `_env` parameter (renamed to `env`); precedence is now
+  `AO_RUN_FILE` > `AO_HOME` > `$HOME/.ao/running.json`. Empty values
+  treated as unset.
+  - commit `874a49e0` — 4 new vitest sub-cases PASS, file total 20/20.
+- `AGENTS.md` "All app state lives under `~/.ao` only" hard rule
+  rewritten to mention `AO_HOME` (with the additive/empty-as-unset
+  semantics); `cli.mdx` env-var table gets an `AO_HOME` row plus a
+  reworded `AO_DATA_DIR` row; `README.md` env-var table gains the
+  `AO_HOME` row.
+  - commits `aab7b7b4`, `71dcf41b`.
+- Docs housekeeping: `.docs/TODO.md` ticks everything that landed,
+  leaves open items explicitly unchecked with the right blocker
+  named. `.docs/DECISIONS.md` gains open question C (AO_HOME missing
+  → create vs. error).
+
+**Build / test gates run this iteration (summary)**
+
+- Backend: `go build ./...` OK; `go test -race ./...` exit 0 (all
+  packages green; integration 22.6s, sqlite/store 76.2s, project 50.3s,
+  everything else fence-post).
+- Frontend: `npm run typecheck` exit 0; `npx vitest run src/shared/`
+  7 files / 89 tests PASS (`user-data 5`, `telemetry 7`,
+  `daemon-discovery 20`, plus pre-existing files).
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- `Cross-platform smoke: AO_HOME override exercised on Linux, macOS,
+  Windows (CI matrix or manual)` — remaining Phase 1 TODO item; this
+  iteration is Linux-only. Adding the CI matrix needs a follow-up. RFC
+  001 does not name a Decision that blocks this; it's a "do it" item,
+  not a fork in the road.
+- `Decide: does AO create AO_HOME if it doesn't exist yet, or error?`
+  — explicitly surfaced in `.docs/DECISIONS.md` as new open question
+  **C**. RFC 001 §"Decision" is silent on this; TODO.md has long had
+  it as a "Decide:" item. Will block any code path that writes under
+  `$AO_HOME` for the first time (runfile.Write already does `MkdirAll`;
+  ptyregistry.writeRaw already does `MkdirAll`; the question is whether
+  to centralise that and at what permissions). NOT invented here.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. Resolve open question **C** with the user (create-on-missing yes/no
+   and the perms). Cheap to slot in; Phase 1 follow-up before Phase 2.
+2. Add the cross-platform CI matrix for the new AO_HOME tests so the
+   macOS / Windows smoke is provably covered (in-repo CI workflow edit;
+   one Linux box can run `GOOS=darwin go test ./internal/config` and
+   `GOOS=windows` already, no real CI round trip required for this).
+3. Begin Phase 2 — Provider gateway (RFC 002) on the same branch.
+   Open questions A and B stay explicitly blocked; the per-adapter env
+   var audit is the natural starting point and does not need either A
+   or B.
