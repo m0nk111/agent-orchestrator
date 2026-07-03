@@ -32,7 +32,7 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [x] `frontend/src/main.ts`: `app.setPath("userData", …)` reads `AO_HOME` before falling back to `os.homedir()` — feat(electron) 1885ddf8 (`resolveUserDataParent` helper used at the call site).
 - [x] Verify `process.env.AO_HOME` is actually readable at the point `app.setPath` is called (before `app.ready`) — confirm no Electron env-loading order issue — same commit; `process.env` is synchronously populated at process start, the helper does a plain lookup, no deferred read needed.
 - [x] `frontend/src/shared/telemetry.ts`: `defaultDataDir()` adds an `AO_HOME` tier ahead of `$HOME/.ao/data` — feat(telemetry) df3bb0b2 (`AO_DATA_DIR` > `AO_HOME` > `$HOME/.ao/data`).
-- [ ] `frontend/src/shared/daemon-discovery.ts`: `defaultRunFilePath()` actually wires in its currently-unused `_env` parameter to check `AO_HOME`
+- [x] `frontend/src/shared/daemon-discovery.ts`: `defaultRunFilePath()` actually wires in its currently-unused `_env` parameter to check `AO_HOME` — feat(daemon-discovery) 874a49e0 (also picks up `AO_RUN_FILE` while we're at it; precedence `AO_RUN_FILE` > `AO_HOME` > `$HOME/.ao/running.json`).
 
 ### Tests
 - [ ] `config_test.go`: `AO_HOME` alone → used; `AO_HOME` + `AO_DATA_DIR` both set → `AO_DATA_DIR` wins; neither set → `$HOME/.ao`
