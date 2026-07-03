@@ -29,8 +29,8 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [ ] Windows path handling: verify `AO_HOME` with drive letters / backslashes resolves correctly in `filepath.Join` calls
 
 ### Frontend (Electron)
-- [ ] `frontend/src/main.ts`: `app.setPath("userData", …)` reads `AO_HOME` before falling back to `os.homedir()`
-- [ ] Verify `process.env.AO_HOME` is actually readable at the point `app.setPath` is called (before `app.ready`) — confirm no Electron env-loading order issue
+- [x] `frontend/src/main.ts`: `app.setPath("userData", …)` reads `AO_HOME` before falling back to `os.homedir()` — feat(electron) 1885ddf8 (`resolveUserDataParent` helper used at the call site).
+- [x] Verify `process.env.AO_HOME` is actually readable at the point `app.setPath` is called (before `app.ready`) — confirm no Electron env-loading order issue — same commit; `process.env` is synchronously populated at process start, the helper does a plain lookup, no deferred read needed.
 - [ ] `frontend/src/shared/telemetry.ts`: `defaultDataDir()` adds an `AO_HOME` tier ahead of `$HOME/.ao/data`
 - [ ] `frontend/src/shared/daemon-discovery.ts`: `defaultRunFilePath()` actually wires in its currently-unused `_env` parameter to check `AO_HOME`
 
