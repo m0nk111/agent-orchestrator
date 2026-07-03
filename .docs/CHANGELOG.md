@@ -3,6 +3,52 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 2 — 2026-07-03 (Fase 1 sluit-deurtjes)
+
+**Wat is geland**
+
+- `backend/internal/config/config_test.go::TestLoadAOHome` gained two
+  sub-cases pinning Windows-path behaviour:
+    - `AO_HOME=C:\Users\me\state` → `RunFilePath =
+      C:\Users\me\state/running.json` (backslashes in the input
+      survive verbatim; `filepath.Join` only changes the appended
+      `running.json` segment's separator to the host's).
+    - `AO_HOME=C:/Users/me/state` → mixed-slash form is also accepted
+      verbatim.
+  Both pass on this Linux host. On Windows, the same code produces a
+  fully backslash-joined path. Important: `defaultStateDir()` does NOT
+  mutate the `AO_HOME` value — only the `Load()` step that joins
+  `running.json` or `data` onto it touches the path, and `filepath.Join`
+  is the right primitive for cross-platform composition.
+  - commit `eeb8e793`; full backend `go test -race ./...` exit 0.
+- `.docs/TODO.md`: tick the Windows-path-handling item; reference the
+  test-by-test proof.
+- `.docs/ROADMAP.md`: Phase 1 status box added, pointing at the
+  CHANGELOG and naming open question C as the one residual item.
+- Push to `origin` only (no force); 2 new commits pushed.
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- Open question **C** in `DECISIONS.md` (`AO_HOME` missing → create vs.
+  error): still waiting on the user. Is the only remaining "Phase 1
+  follow-up" item.
+- Open question **A** (controlled environment) and **B** (web-GUI
+  surface) — not in Phase 1; will block Phases 3 and 5 respectively
+  when we get there.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. Resolve open question **C** with the user. The default the existing
+   code accidentally encodes is "create on first write" (both
+   `runfile.Write` and `ptyregistry.writeRaw` already `MkdirAll`).
+   Choice is mostly about where to centralize the `MkdirAll` and what
+   permissions — not a fork in the road, but still the user's call.
+2. Begin Phase 2 (RFC 002, provider gateway) on the same branch. Per
+   the loop's phase-order rule, Phase 1 is now mechanically done; the
+   only blocker on Phase 2 is research (the per-adapter env-var audit
+   listed first in its TODO section) plus the Bifrost distribution
+   decision (also a user call).
+
 ## Iteratie 1 — 2026-07-02/03 (Fase 1: AO_HOME end-to-end)
 
 **Wat is geland**
