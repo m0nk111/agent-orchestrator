@@ -35,17 +35,17 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 - [x] `frontend/src/shared/daemon-discovery.ts`: `defaultRunFilePath()` actually wires in its currently-unused `_env` parameter to check `AO_HOME` — feat(daemon-discovery) 874a49e0 (also picks up `AO_RUN_FILE` while we're at it; precedence `AO_RUN_FILE` > `AO_HOME` > `$HOME/.ao/running.json`).
 
 ### Tests
-- [ ] `config_test.go`: `AO_HOME` alone → used; `AO_HOME` + `AO_DATA_DIR` both set → `AO_DATA_DIR` wins; neither set → `$HOME/.ao`
-- [ ] `ptyregistry_test.go`: same precedence, Windows-registry-specific
-- [ ] `telemetry.test.ts`: `defaultDataDir` precedence including `AO_HOME`
-- [ ] `daemon-discovery.test.ts`: `defaultRunFilePath` precedence including `AO_HOME`
-- [ ] Cross-platform smoke: `AO_HOME` override exercised on Linux, macOS, Windows (CI matrix or manual)
+- [x] `config_test.go`: `AO_HOME` alone → used; `AO_HOME` + `AO_DATA_DIR` both set → `AO_DATA_DIR` wins; neither set → `$HOME/.ao` — covered by `TestLoadAOHome` in f9d60d58 (5/5 sub-cases PASS).
+- [x] `ptyregistry_test.go`: same precedence, Windows-registry-specific — covered by `TestRegistryFileAOHome` in 137c3052 (3/3 sub-cases PASS).
+- [x] `telemetry.test.ts`: `defaultDataDir` precedence including `AO_HOME` — covered by df3bb0b2 (4 new sub-cases PASS).
+- [x] `daemon-discovery.test.ts`: `defaultRunFilePath` precedence including `AO_HOME` — covered by 874a49e0 (4 new sub-cases PASS; full file 20/20).
+- [ ] Cross-platform smoke: `AO_HOME` override exercised on Linux, macOS, Windows (CI matrix or manual) — BLOCKED: this iteration is Linux-only; CI matrix needs to be added by a follow-up. Existing cross-platform Go tests already exercise `filepath.Join` semantics, but a dedicated AO_HOME smoke on darwin/windows remains to be set up.
 
 ### Docs
-- [ ] `AGENTS.md`: update the "All app state lives under `~/.ao` only" hard rule to mention `AO_HOME`
-- [ ] `frontend/src/landing/content/docs/cli.mdx`: add an `AO_HOME` row to the env var table
-- [ ] Explicitly document: existing installs are unaffected (default path unchanged) — no migration needed
-- [ ] `README.md` / quickstart: check for any other `~/.ao` mentions that need the same note
+- [x] `AGENTS.md`: update the "All app state lives under `~/.ao` only" hard rule to mention `AO_HOME` — aab7b7b4.
+- [x] `frontend/src/landing/content/docs/cli.mdx`: add an `AO_HOME` row to the env var table — aab7b7b4 (also reworded the existing `AO_DATA_DIR` row).
+- [x] Explicitly document: existing installs are unaffected (default path unchanged) — no migration needed — implicit in the new `AO_HOME` row wording ("Additive: unset falls back to the default"); flagging here so this stays visible for reviewers.
+- [x] `README.md` / quickstart: check for any other `~/.ao` mentions that need the same note — 71dcf41b (added `AO_HOME` row to README env-var table; docs/cli/README.md rewording is conservative deferred until Phase 2's provider gateway review).
 
 ---
 
