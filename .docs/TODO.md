@@ -52,7 +52,12 @@ Cross-cutting tasks that don't belong to a single phase are at the bottom.
 ## Phase 2 — Provider gateway ([RFC 002](rfcs/002-provider-gateway-architecture.md)) — first module ([RFC 006](rfcs/006-modular-architecture.md))
 
 ### Research (do first, blocks everything else in this phase)
-- [ ] Per-adapter env var audit: for each of the 23 adapters, document which env var(s) its underlying CLI reads for a custom base URL / API key / model override (table: adapter id → base-URL var → API-key var → model var → notes). Start with `opencode` (Guardian-style pattern already used elsewhere on this host), then `claude-code` (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_MODEL`, already confirmed), then work through the rest: `aider`, `amp`, `auggie`, `autohand`, `cline`, `codex`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`
+- [ ] Per-adapter env var audit: for each of the 23 adapters, document which env var(s) its underlying CLI reads for a custom base URL / API key / model override (table: adapter id → base-URL var → API-key var → model var → notes). Start with `opencode` (Guardian-style pattern already used elsewhere on this host), then `claude-code` (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_MODEL`, already confirmed), then work through the rest: `aider`, `amp`, `auggie`, `autohand`, `cline`, `codex`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`.
+
+#### Per-adapter audit progress (Phase 2 Research #1)
+- [x] `opencode` — audit in `.docs/research/opencode-env-audit.md` (commit 21f1403c).
+- [ ] `claude-code` — to verify the `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL` set (TODO claims already confirmed; pin source).
+- [ ] `aider`, `amp`, `auggie`, `autohand`, `cline`, `codex`, `continueagent`, `copilot`, `crush`, `cursor`, `devin`, `droid`, `goose`, `grok`, `kilocode`, `kimi`, `kiro`, `pi`, `qwen`, `agy`, `vibe` — to do.
 - [ ] Decide Bifrost distribution mechanism: vendored binary download on first run, Docker container, or system package expectation
 - [ ] Confirm Bifrost's own bind-host default and whether it can be pinned to loopback-only (must match AO's own security posture)
 

@@ -3,6 +3,60 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 3 — 2026-07-03 (Fase 2 Research: opencode)
+
+**Wat is geland**
+
+- **Phase 2 Research #1 — first slice of the per-adapter env var
+  audit.** Started with `opencode` per TODO.md's explicit ordering
+  ("start with `opencode`, Guardian-style pattern already used
+  elsewhere on this host, then `claude-code`…").
+- New file `.docs/research/opencode-env-audit.md` documents what
+  opencode itself reads (per `opencode.ai/docs/config`):
+    - `OPENCODE_MODEL` selects the model by id;
+    - `OPENCODE_CONFIG`, `OPENCODE_CONFIG_DIR`,
+      `OPENCODE_CONFIG_CONTENT`, `OPENCODE_TUI_CONFIG` configure
+      where opencode reads its provider list;
+    - **No** opencode-level base-URL env var exists (base URL is
+      per-provider in the opencode config file);
+    - API keys are per-provider via the config's `{env:VAR_NAME}`
+      substitution.
+- The AO `opencode` adapter (`backend/internal/adapters/agent/opencode/opencode.go`)
+  passes **no** provider-related env vars today — it inherits whatever
+  is in the spawned session's env. Implication: routing opencode
+  through AO's Bifrost gateway means writing
+  `OPENCODE_CONFIG_CONTENT` (or a config file) at session-spawn time.
+- `.docs/TODO.md` Phase 2 Research #1 splitt off into a
+  per-adapter-progress sub-list so the 23-adapter audit can be
+  tracked adapter by adapter.
+- Commit `21f1403c`; nothing in `backend/` changed, so no test gate
+  ran (this is research-only).
+
+**Wat is geblokkeerd en op welke beslissing**
+
+- The other 22 adapters on the audit list are not blocker-blocked;
+  they will be tackled in subsequent iterations. None requires user
+  input to research; only the eventual Bifrost integration does,
+  which is RFC 002 §3 / Decision 1 territory.
+- Open question **A** (controlled env, Phase 3), **B** (web-GUI,
+  Phase 5), and **C** (`AO_HOME` create-vs-error, Phase 1 follow-up)
+  are still waiting on the user.
+
+**Voorgestelde volgende iteraties (in volgorde)**
+
+1. Continue Research #1 with `claude-code` verifieren (TODO says
+   already confirmed — pin the source so the claim no longer rests
+   on assertion).
+2. Then a sequential run through the other 22 adapters — one or two
+   per iteration, given the 1-hour budget. Adapters likely to be the
+   most probing first: `codex`, `aider`, `cline`, `copilot` — each
+   has its own CLI with documented provider-overrides worth pinning
+   to a citation rather than recall.
+3. Once the audit table is complete, lift it into a single
+   `internal/providers/adapter_env.go` map (data, not code logic) so
+   the Bifrost sidecar config generator can iterate without
+   hard-coding per-adapter branches.
+
 ## Iteratie 2 — 2026-07-03 (Fase 1 sluit-deurtjes)
 
 **Wat is geland**
