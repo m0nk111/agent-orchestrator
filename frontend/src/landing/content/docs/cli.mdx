@@ -367,7 +367,8 @@ A few env vars affect every command:
 
 | Variable                            | Purpose                                                                              |
 | ----------------------------------- | ------------------------------------------------------------------------------------ |
-| `AO_DATA_DIR`                       | Override the `~/.ao` base directory.                                                 |
+| `AO_HOME`                           | Override the `~/.ao` base directory for the entire AO footprint (state, registry, telemetry, Electron userData). Additive: unset keeps `$HOME/.ao` as the default. |
+| `AO_DATA_DIR`                       | Override the durable state dir only (`$AO_HOME/data` by default). Wins over `AO_HOME`. |
 | `AO_LOG_LEVEL`                      | `error` · `warn` · `info` · `debug` · `trace`                                        |
 | `AO_CONFIG_PATH`                    | Absolute path to a specific `agent-orchestrator.yaml`. Overrides CWD-based search.   |
 | `AO_SESSION_ID` · `AO_SESSION_NAME` | Auto-set inside spawned sessions; used by `claim-pr` default                         |
