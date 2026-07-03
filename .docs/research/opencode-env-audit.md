@@ -715,5 +715,196 @@ Source URLs (all fetched 2026-07-02):
   anyone with read access to `$HOME`; the secrets file is cleaner.
   Decision flagged, not made.
 
+## `cursor` (Cursor CLI, binary `agent` legacy alias `cursor-agent`)
+
+Source adapter:
+`backend/internal/adapters/agent/cursor/cursor.go` (242 lines, package
+`cursor`, adapter ID `"cursor"`).
+
+### Adapter self-description (verbatim from source)
+
+> "Package cursor implements the Cursor CLI agent adapter: launching new
+> sessions, resuming hook-tracked sessions, installing workspace-local
+> hooks, and reading hook-derived session info.
+>
+> AO-managed sessions derive native session identity and display
+> metadata from Cursor hooks instead of transcript/cache scans. The
+> driven binary is `cursor-agent` (not the `cursor` editor binary)."
+> — `cursor.go:1-7`
+
+Launch argv (from inspection of preflight / launch paths):
+
+```
+cursor-agent -p --output-format stream-json [--trust]
+```
+
+Restore argv:
+
+```
+cursor-agent -p --output-format stream-json --trust --resume <id>
+```
+
+Permission flags (verified by reading the mouse-flags branch):
+
+| AgentOps permission | Cursor flag |
+|---|---|
+| `Default`           | *(no flag — defer to `.cursor/cli.json` permissions)* |
+| `AcceptEdits`       | *(no flag)* |
+| `BypassPermissions` | `--yolo` |
+| `Auto`              | `--force` |
+
+Binary resolution (per `cursor.go`):
+
+1. `$PATH` lookup
+2. `/usr/local/bin/cursor-agent`
+3. `/opt/homebrew/bin/cursor-agent`
+4. `~/.local/bin/cursor-agent`
+
+### Env-var surface — primary findings
+
+The adapter itself **touches zero environment variables**. Direct grep
+confirms this:
+
+```bash
+$ grep -nE 'os\.(Getenv|Setenv|LookupEnv)' \
+    backend/internal/adapters/agent/cursor/cursor.go
+# (no matches; exit 1)
+```
+
+The adapter reads **only** its own CLI flags and Cursor's
+on-disk config files (`.cursor/cli.json`, `.cursor/rules`, etc.,
+plus a workspace `AGENTS.md` / `CLAUDE.md`). Auth is supplied by
+Cursor's own OAuth/device-code login; the upstream binary
+`agent` ships its credentials through its built-in login flow, not
+through env.
+
+### Cursor CLI env-var surface — official doc search
+
+Audit attempted to verify the rumoured `CURSOR_API_KEY`,
+`CURSOR_API_BASE_URL`, `OPENAI_API_KEY`, and per-model
+`CURSOR_API_<MODEL_VAR>` knobs that a third-party web index
+attributed to `cursor.com/docs/agent/environments`.
+
+**Findings:**
+
+- `https://cursor.com/docs/agent/environments` → **404** (path
+  never existed or was retired).
+- `https://cursor.com/docs/cli/configuration` → **404**.
+- `https://cursor.com/docs/cli/api` → **404**.
+- `https://cursor.com/docs/cli/environment-variables` → **404**.
+- `https://cursor.com/docs/cli/reference` → **404**.
+- Live docs search index (`Cmd-K`) on `cursor.com/docs/cli/overview`
+  for query `CURSOR_API_KEY` → **"No results found."**
+
+The cursor.com docs search index is rendered client-side via
+cmdk (the React Command palette at the top of every docs page),
+so this 0-hit search is a direct negative result, not a parse
+limitation.
+
+There is **no publicly documented environment-variable surface**
+for the Cursor CLI in any reachable page on
+`cursor.com/docs/*`. The `CURSOR_API_*` env-var claim appears
+unsourced — likely either fabricated, retired from older docs,
+or never shipped. Recommendation: **do not rely on it.**
+
+### Configuration sources the CLI actually reads
+
+Repository-direct fetch of the official install script
+(`curl -sSL https://cursor.com/install | head -132`) confirms the
+layout the AO adapter resolves against:
+
+```bash
+# From cursor.com/install (line 130-131):
+ln -s ~/.local/share/cursor-agent/versions/<ver>/cursor-agent \
+      ~/.local/bin/agent
+ln -s ~/.local/share/cursor-agent/versions/<ver>/cursor-agent \
+      ~/.local/bin/cursor-agent
+```
+
+Two takeaways from this:
+
+1. **Both `agent` and `cursor-agent` are valid names** — `agent` is
+   the primary symlink, `cursor-agent` is preserved as a legacy
+   alias (comment in install script: *"primary: agent, legacy:
+   cursor-agent"*). AO's hardcoded `cursor-agent` therefore
+   continues to work indefinitely after a fresh install; no
+   breakage.
+2. **Real install path** is
+   `~/.local/share/cursor-agent/versions/<ver>/`, with `~/.local/bin`
+   as the on-PATH symlink target. Worth noting if AO ever wants to
+   version-pin or detect the binary directly.
+
+### CLI flags the binary accepts (confirmed live)
+
+Rendered live from `https://cursor.com/docs/cli/overview`
+(Playwright, 2026-07-03): flags actually accepted by the binary
+include `--print` / `-p`, `--model`, `--output-format`, `--mode`
+(`agent`/`plan`/`ask`), `--sandbox` (`enabled`/`disabled`),
+`--trust`, `--continue`, `--resume="chat-id"`, plus interactive
+subcommands `agent ls` and `agent resume`.
+
+No env-var knobs for base URL / model override are listed in
+this page. Routing is **flag-driven, not env-driven** by design;
+the base URL / API key is owned by Cursor's login + billing
+(Pro/Pro+/Ultra/Teams/Enterprise), not by a per-call override.
+
+### Negative findings (audit-relevant)
+
+- **`CURSOR_API_KEY` / `CURSOR_API_BASE_URL` / `CURSOR_API_<MODEL_VAR>`**
+  — claim cannot be confirmed against any reachable current
+  Cursor docs page; the docs search index returns zero hits, and
+  every plausible URL (`/docs/agent/environments`,
+  `/docs/cli/configuration`, `/docs/cli/environment-variables`)
+  is 404. These env vars are likely fabricated or have been
+  retired from older docs. Do not wire Bifrost gateway routing
+  through them.
+- **`OPENAI_API_KEY` as an exception** — same status; same single
+  source, same 404.
+
+### Implication for AO provider gateway
+
+Cursor is the cleanest of all 23 audited adapters so far for
+Bifrost, but in a *negative* sense: **the public Cursor CLI does
+not expose a base-URL-override knob**, so AO cannot transparently
+reroute Cursor traffic through the Bifrost gateway. Strategies:
+
+1. **Accept the gap** for v1: let Cursor talk to `api.cursor.com`
+   via its built-in OAuth login. Bifrost has no entry point here.
+   Cheapest: zero code change in the cursor adapter.
+2. **Config-file-injection** (riskier): Cursor is closed-source;
+   we have no authoritative list of fields it reads from
+   `~/.config/cursor/` or wherever it stores the active session
+   context, so we'd be guessing. Skip for v1.
+3. **Network-level proxy** (out-of-scope for the router-gateway
+   RFC, would live at infra layer): possible but not the shape
+   the Bifrost scaffold PR is scoped to.
+
+**Recommendation:** treat Cursor as **out-of-scope for v1 of the
+Bifrost gateway**. Document the gap in the gateway PR's adapter
+matrix. Revisit only if/when Cursor adds a `--base-url`-style
+flag (they have not, per live docs).
+
+### Adapter changes needed for Bifrost
+
+**None.** The cursor adapter is already a clean pass-through. If
+the Bifrost gateway later needs to inject any env vars, the spawn
+context's `cfg.Env` map is the right place; no cursor.go edits
+required today.
+
+### Open question surfaced
+
+- **Binary name: `agent` vs `cursor-agent`** — both exist as
+  symlinks today (verified directly from cursor.com/install
+  script, 2026-07-03). AO's hardcoded `cursor-agent` is the
+  legacy alias and still works after a fresh install. No
+  immediate change is needed. A cosmetic refactor could switch
+  to `agent` (the primary name) to match the docs-driven UX,
+  but it is **strictly optional and not audit-priority**.
+- **`cursor-agent` is the legacy window into the same binary**
+  — for any future AO feature that wants to detect a binary
+  that the user already has installed but the AO adapter cannot
+  find, it is worth knowing both names are valid. Documented
+  here so future agents do not re-derive it.
+
 
 

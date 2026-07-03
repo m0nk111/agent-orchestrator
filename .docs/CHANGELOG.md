@@ -3,6 +3,99 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 10 — 2026-07-03 (Fase 2 Research: cursor)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `cursor` (Cursor CLI,
+  binary `agent` primary / `cursor-agent` legacy alias). Section
+  appended to `.docs/research/opencode-env-audit.md` (file now 10
+  sections, ~880 lines).
+- Verified sources:
+  - `https://cursor.com/docs/cli/overview` — Playwright-rendered
+    (2026-07-03). CLI flags actually accepted by the binary:
+    `--print` / `-p`, `--model`, `--output-format`, `--mode`
+    (`agent`/`plan`/`ask`), `--sandbox` (`enabled`/`disabled`),
+    `--trust`, `--continue`, `--resume="chat-id"`, plus interactive
+    subcommands `agent ls` and `agent resume`. **Zero env-var
+    references** on this page.
+  - `https://cursor.com/install` — direct-fetched shell script
+    (2026-07-03). Lines 130-131: `install.sh` symlinks both
+    `~/.local/bin/agent` (primary) and `~/.local/bin/cursor-agent`
+    (legacy alias) to the real binary
+    `~/.local/share/cursor-agent/versions/<ver>/cursor-agent`.
+  - Direct grep of `backend/internal/adapters/agent/cursor/cursor.go`
+    for `os.(Getenv|Setenv|LookupEnv)` → **zero matches**. Cursor
+    adapter is a clean pass-through.
+- Cursor CLI **public env-var search** (negative finding):
+  - `https://cursor.com/docs/agent/environments` → 404.
+  - `https://cursor.com/docs/cli/configuration` → 404.
+  - `https://cursor.com/docs/cli/api` → 404.
+  - `https://cursor.com/docs/cli/environment-variables` → 404.
+  - `https://cursor.com/docs/cli/reference` → 404.
+  - Live docs search index (`Cmd-K` on `/docs/cli/overview`) for
+    query `CURSOR_API_KEY` → **"No results found"** (cmdk-rendered
+    client-side, so 0 hits is a real negative).
+- Conclusion: **the rumoured `CURSOR_API_KEY`,
+  `CURSOR_API_BASE_URL`, `OPENAI_API_KEY` exception, and
+  `CURSOR_API_<MODEL_VAR>` env knobs do not exist** in any
+  reachable current page on cursor.com/docs/*. The claim is
+  either fabricated or retired from older docs. Do not wire
+  Bifrost gateway routing through them.
+- `TODO.md` Phase-2 Research sub-list ticked:
+
+  ```
+  - [x] cursor — audit in same file "cursor" section; sourced
+        from https://cursor.com/docs/cli/overview (Playwright,
+        2026-07-03) + https://cursor.com/install (direct-fetched
+        shell script, 2026-07-03). Negative finding: no
+        CURSOR_API_KEY / CURSOR_API_BASE_URL / OPENAI_API_KEY
+        / CURSOR_API_<MODEL_VAR> env knobs in any reachable
+        current doc page (every probable URL is 404; docs
+        search index 0 hits). Cursor is closed-source OAuth-
+        bound to its own billing, no public base-URL override —
+        no v1 Bifrost gateway route. Adapter: zero env-touches
+        (pass-through). Binary: agent (primary) and cursor-agent
+        (legacy symlink alias) both valid; AO's hardcoded
+        cursor-agent still works indefinitely.
+  ```
+
+**Headline finding**
+
+- Cursor is the **first negative-Bifrost audit in the queue**:
+  no public env-var hook exists today that would let AO redirect
+  Cursor CLI traffic through the Bifrost gateway. AO has three
+  options, only the first is recommended for v1:
+  1. **Accept the gap**: let Cursor talk to `api.cursor.com`
+     via its built-in OAuth login. Zero code change in the
+     cursor adapter.
+  2. Config-file injection (Cursor is closed-source, we have
+     no authoritative list of fields it reads — guessing
+     territory, skip for v1).
+  3. Network-level proxy (infra-layer change, not the shape
+     the current Bifrost scaffold PR is scoped to).
+- **Adapter changes needed for Bifrost: none.** cursor.go is
+  already a clean pass-through. Future env needs (if any) flow
+  through `cfg.Env` at spawn time, not adapter edits.
+- Binary-name trivia worth knowing: `cursor-agent` (AO's
+  hardcoded) is the **legacy alias** that the install script
+  still creates alongside `agent`. Both names validate to the
+  same executable. No urgent change; cosmetic refactor option
+  for a follow-up.
+
+**Open questions surfaced (NOT resolved — flagged for Bifrost PR)**
+
+- **Treat `cursor` as out-of-scope for Bifrost v1** until Cursor
+  ships a `--base-url`-style flag — there is no point writing
+  speculative config-file injection against a closed-source
+  binary whose on-disk layout we cannot reverse-engineer
+  confidently. Document the gap in the gateway PR's adapter
+  matrix; revisit only on a Cursor docs change.
+- **Binary alias drift**: if AO ever wants to look up the
+  binary directly (e.g., version detection), it needs to look
+  at `~/.local/share/cursor-agent/versions/<ver>/`, not just
+  PATH. Cosmetic; not audit-priority.
+
 ## Iteratie 9 — 2026-07-03 (Fase 2 Research: continueagent)
 
 **Wat is geland**
