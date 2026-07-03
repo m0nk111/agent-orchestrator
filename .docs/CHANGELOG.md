@@ -3,6 +3,93 @@
 This file records what each autonomous loop iteration landed on
 `fork/ao-home-and-providers`. Newest entry on top.
 
+## Iteratie 14 — 2026-07-03 (Fase 2 Research: auggie)
+
+**Wat is geland**
+
+- Per-adapter env-var audit continued: `auggie` (Augment Code CLI,
+  binary `auggie`, npm `@augmentcode/auggie`). Section appended to
+  `.docs/research/opencode-env-audit.md`.
+- Source citations (all direct-fetched or read on 2026-07-03):
+  - `backend/internal/adapters/agent/auggie/auggie.go:1-37` —
+    verbatim package doc: "Auggie has no single 'approve
+    everything' flag. It governs unattended tool/file approval
+    through granular `--permission <tool>:<allow|deny>` rules
+    (and a read-only `--ask` mode), not a 4-mode bypass like
+    Claude Code. Because there is no verifiable blanket
+    auto-approve flag, every AO permission mode emits no flag."
+  - `auggie.go:98-117` — launch argv shape
+    `auggie --print [--instruction-file <f> | --instruction <s>] [-- <prompt>]`.
+  - `auggie.go:142-156` — restore argv shape
+    `auggie --print --resume <sessionId>`.
+  - `auggie.go:191` — single env-touch: `os.Getenv("APPDATA")` for
+    Windows binary-path resolution.
+  - `auggie_test.go:71-97` — `TestGetLaunchCommandPermissionModesEmitNoFlag`
+    asserts that for every AO permission mode the expected argv is
+    `[]string{"auggie", "--print"}` (no flag appended).
+  - `registry.npmjs.org/@augmentcode/auggie/latest` — direct-fetched.
+    Package metadata: `bin: { "auggie": "augment.mjs" }`,
+    `description: "Auggie CLI Client by Augment Code"`,
+    `homepage: https://augmentcode.com`. The bin target is a
+    compiled `.mjs` bundle, **not** an open-source distribution.
+  - `https://augmentcode.com` — direct-fetched. Marketing copy
+    mentions "BYOK for models" and "BYOK for models" under
+    security/trust badges; **no env-var names, no base-URL
+    knob, no flag names** are published on the homepage.
+  - `https://docs.augmentcode.com/cli/overview` (and the parent
+    `/docs` route) — direct-fetched. Confirms `--print` and
+    `--quiet` as the only documented CLI flags. Login is
+    `auggie login`. Install is `npm install -g @augmentcode/auggie`.
+  - `https://docs.augmentcode.com/models` — direct-fetched. The
+    only model-selection knob is **`/model` slash command** or
+    **`--model <name>` flag**. Quoted verbatim from the page:
+
+    > "In Auggie CLI, use the `/model` slash command or pass
+    > the `--model` flag with the desired model."
+
+  - `https://docs.augmentcode.com/models/available-models` —
+    direct-fetched. Confirms there are **no env vars** for any
+    of the supported model families. The internal router is
+    named **Prism**, quoted verbatim from the page:
+
+    > "Prism lets Augment choose the best-fit model for each
+    > request. Instead of locking you into a single model, each
+    > Prism option routes within a curated model family…"
+
+  - GitHub org probe via `gh api orgs/augmentcode/repos
+    --paginate` — confirms the `augmentcode` org ships
+    unrelated repos (DeepSpeed, environments, spark,
+    automatic-pull-request-review, etc.) but **no `auggie`
+    source repo**. Auggie CLI source is closed-source.
+- Adapter env-touches: exactly one — `APPDATA` at `auggie.go:191`
+  (Windows binary-path resolution). Zero other reads/writes.
+  Adapter is fully pass-through.
+
+**Conclusie**
+
+- **No clean Bifrost route for Auggie in v1.** Same shape as
+  Cursor / Amp: closed-source, OAuth-bound, no documented env-var
+  surface for base URL or API key. `--model` selects from
+  Augment's curated list (Prism-variants + named models)
+  but does not let the user specify an external base URL.
+- Permission mapping: **none** — every mode emits just
+  `auggie --print`, no flag appended (matches the test
+  `TestGetLaunchCommandPermissionModesEmitNoFlag`).
+
+**Open questions surfaced**
+
+- The `--model` flat at the CLI level is interesting: if
+  Augment ever exposes a "use my own Prism-compatible
+  backend" flag (some closed-source CLIs do this), that
+  could become a Bifrost seam. Today, none documented. Not
+  flagged.
+
+**Verificatie / gates**
+
+- Markdown / section structure verified by `Edit` write state.
+  No Go / TS code touched this round — research slice only.
+  Gates deferred (no source files modified).
+
 ## Iteratie 13 — 2026-07-03 (Fase 2 Research: amp)
 
 **Wat is geland**

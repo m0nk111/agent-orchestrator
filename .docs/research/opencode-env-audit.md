@@ -1616,5 +1616,186 @@ the negative finding instead.
     audit's negative finding is honest and current; the
     followup is *enablement*, not correctness.
 
+## `auggie` (Augment Code, binary `auggie`, npm `@augmentcode/auggie`)
+
+Source adapter:
+`backend/internal/adapters/agent/auggie/auggie.go` (255 lines,
+package `auggie`, adapter ID `"auggie"`).
+
+### Adapter self-description (verbatim, package doc)
+
+> "Package auggie implements the Auggie (Augment Code) agent adapter:
+> launching new headless Auggie sessions and resuming sessions when
+> a native Auggie session id is known.
+>
+> Auggie is Augment Code's terminal coding agent (binary "auggie",
+> installed via `npm install -g @augmentcode/auggie`). It exposes
+> a headless one-shot mode via `--print` (alias `-p`) which runs a
+> single instruction and exits — the mode AO uses to drive it
+> unattended.
+>
+> Launch shape:
+>
+> 	auggie --print [--instruction-file <f> | --instruction <s>] [-- <prompt>]
+>
+> Permissions: Auggie has no single "approve everything" flag.
+> It governs unattended tool/file approval through granular
+> `--permission <tool>:<allow|deny>` rules (and a read-only
+> `--ask` mode), not a 4-mode bypass like Claude Code. Because
+> there is no verifiable blanket auto-approve flag, every AO
+> permission mode emits no flag and defers to the user's Auggie
+> configuration, rather than guessing a flag that does not exist.
+>
+> Resume: Auggie supports `--resume <sessionId>` (alias `-r`),
+> usable with `--print` for headless resume. AO only has a native
+> session id to resume from when one was captured into session
+> metadata; Auggie exposes no hook/lifecycle system, so that id
+> is not captured automatically yet.
+>
+> Hooks/activity: Auggie has no hook or lifecycle event system
+> (it reads .claude/commands/ for slash commands, but that is not
+> Claude Code hook compatibility). Hook installation and
+> SessionInfo are intentionally no-ops (Tier C) until an
+> Auggie-specific activity integration exists."
+> — `auggie.go:1-37`
+
+Launch argv (`auggie.go:98-117`):
+
+```
+auggie --print [--instruction-file <f> | --instruction <s>] [-- <prompt>]
+```
+
+Restore argv (`auggie.go:142-156`):
+
+```
+auggie --print --resume <sessionId>
+```
+
+Permission mapping (per adapter doc-comment): **none** — every
+mode emits no flag. Reflected in the test
+`TestGetLaunchCommandPermissionModesEmitNoFlag` at
+`auggie_test.go:71-97`: the desired cmd for every permission
+mode is `[]string{"auggie", "--print"}`. Source of truth matches
+the package doc.
+
+### Env-var surface — adapter itself
+
+Single touch (`auggie.go:191`):
+
+```
+if appData := os.Getenv("APPDATA"); appData != "" {
+    candidates = append(candidates,
+        filepath.Join(appData, "npm", "auggie.cmd"),
+        filepath.Join(appData, "npm", "auggie.exe"),
+    )
+}
+```
+
+— Windows-only binary-path resolution, same pass-through pattern
+as the rest of the adapter set. Zero other env reads/writes in
+the adapter source.
+
+### Env-var surface — Auggie CLI proper
+
+Source paths exercised (all direct-fetched 2026-07-03):
+
+- `registry.npmjs.org/@augmentcode/auggie/latest` — package
+  metadata: `bin: { "auggie": "augment.mjs" }`, `description:
+  "Auggie CLI Client by Augment Code"`, `homepage:
+  https://augmentcode.com`. The bin target is a `.mjs` compiled
+  bundle, not an open-source source distribution.
+- `https://augmentcode.com` (homepage) — marketing copy mentions
+  "BYOK for models" as a capability and links
+  `https://docs.augmentcode.com` for details; **no env var name,
+  base-URL knob, or flag is published on the homepage.**
+- `https://docs.augmentcode.com/cli/overview` and the parent
+  `/docs` route — confirms `--print`, `--quiet` as the only CLI
+  flags documented in the CLI overview; verification: install
+  is `npm install -g @augmentcode/auggie`, login is
+  `auggie login`. No env vars mentioned.
+- `https://docs.augmentcode.com/models` — model-selection is via
+  `/model` slash command (interactive) or `--model <name>` flag
+  (headless). Quoted verbatim from the page:
+
+  > "In Auggie CLI, use the `/model` slash command or pass the
+  > `--model` flag with the desired model."
+
+- `https://docs.augmentcode.com/models/available-models` —
+  confirms there is no env-var on this page for any of the
+  supported model families (Claude / Gemini / GPT / Kimi /
+  Prism variants). The Augment-internal router is named
+  **Prism** and is not user-controllable for base URL:
+
+  > "Prism lets Augment choose the best-fit model for each
+  > request. Instead of locking you into a single model, each
+  > Prism option routes within a curated model family…"
+
+- Org search via `gh api orgs/augmentcode/repos --paginate`
+  does not return an `auggie` or `@augmentcode/auggie`-shaped
+  repository name (the `augmentcode` GitHub org carries
+  unrelated repos: DeepSpeed, environments, spark, etc.). The
+  CLI source is **not** open-source on GitHub.
+
+### Negative finding (audit-critical)
+
+- **No `AUGMENT_*` env-var family exists** in any reachable
+  docs page. `docs.augmentcode.com` exposes the CLI overview,
+  token-based pricing, and the model-availability catalog, none
+  of which call out env-var knobs for base URL, API key, or
+  model override.
+- **No `ANTHROPIC_*` / `OPENAI_*` etc. are honored by auggie**
+  for the same reason: auth is via OAuth (`auggie login`,
+  standard pattern for closed-source coding CLIs). The model
+  is selected by Prism routing inside Augment, *not* by the
+  user setting an env var.
+- **`--model <name>` is the only model-pick knob** — and it
+  just selects among Augment's curated list (Prism variants
+  plus named models: Claude Opus 4.7, Gemini 3.1, GPT 5.4/5.5,
+  Kimi variants). It does not let the user specify an
+  external base URL.
+- **`--print` and `--quiet` are the only documented flags.**
+  Everything else (instructions, resume) is flow-shaping, not
+  routing.
+- **No public BYOK plumbing** is documented in the env-var
+  sense — "BYOK for models" is a marketing capability statement
+  for the **entire Augment platform**, but the per-user key
+  delivery to Auggie's CLI process is OAuth-bearer, not a
+  config-file plumbed base URL.
+
+### Implications for AO provider gateway (Bifrost)
+
+- **No clean Bifrost route for Auggie in v1.** The CLI is
+  closed-source and OAuth-bound to Augment's billing; there
+  is no documented env-var surface that could route model
+  traffic to an alternate URL.
+- Alternative paths (all out of v1 scope for an honest audit):
+  - Reverse-engineer the `.mjs` bundle with `strings(1)` for
+    env-var names (single research artifact; not a stable
+    surface).
+  - Sandbox test: set various env vars and observe whether
+    the request lands at Augment or elsewhere (binary uses
+    HTTPS host pinning in many closed-source products, so
+    this is unreliable).
+  - Long-term: contact Augment for a documented BYOK env
+    surface (lead-time); out of autonomous loop.
+- **No adapter change needed for pass-through.**
+  `auggie.go` continues to call `auggie --print …` and
+  inherits whatever Augment's auth machinery does. The
+  adapter is correct.
+
+### Adapter changes needed for Bifrost
+
+**None.** Pass-through; no permission flag mapping, no env
+plumbing, no base URL hook. Same shape as Cursor / amp on the
+"no Bifrost route" axis.
+
+### Open question surfaced
+
+- **What if the user sets a `--model <prism-variant>` not
+  served by their tier?** Augment may reject the request and
+  bubble a CLI error; not Bifrost-relevant. Flagged only as
+  a UX note, not a v1 audit constraint.
+
+
 
 
