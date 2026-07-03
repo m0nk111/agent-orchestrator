@@ -160,6 +160,7 @@ All configuration is environment-driven. The daemon takes no config file.
 | `AO_PORT`             | `3001`               | HTTP bind port              |
 | `AO_REQUEST_TIMEOUT`  | `60s`                | Per-request timeout         |
 | `AO_SHUTDOWN_TIMEOUT` | `10s`                | Graceful shutdown cap       |
+| `AO_HOME`             | `~/.ao`              | Single-root override for the entire AO footprint (state, registry, telemetry, Electron userData). Additive: unset falls back to the default. |
 | `AO_RUN_FILE`         | `~/.ao/running.json` | PID/port handshake          |
 | `AO_DATA_DIR`         | `~/.ao/data`         | SQLite data directory       |
 | `AO_AGENT`            | `claude-code`        | Compatibility agent adapter |
